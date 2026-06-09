@@ -15,8 +15,8 @@ from dependencies import (
     Pt,
     load_workbook,
     pymupdf,
-    pytesseract,
 )
+from table_grid import parse_table_html, build_docx_table
 from logging_config import logger
 from security import validate_input_path
 
@@ -68,13 +68,12 @@ class FileTranslator:
 
         handlers = {
             ".docx": self._translate_docx,
-            ".pdf": self._translate_pdf,
             ".txt": self._translate_txt,
             ".xlsx": self._translate_xlsx,
             ".pptx": self._translate_pptx,
         }
-        if ext in IMAGE_EXTENSIONS:
-            return self._translate_image(filepath, cb)
+        if ext == ".pdf" or ext in IMAGE_EXTENSIONS:
+            raise RuntimeError("이미지/PDF는 작업 큐(JobManager)를 통해 처리됩니다.")
         handler = handlers.get(ext)
         if handler:
             return handler(filepath, cb)
@@ -208,189 +207,33 @@ class FileTranslator:
                 if i < len(lines) - 1:
                     run.add_break()
 
-    def _translate_pdf(self, filepath: str, cb: Optional[ProgressCallback]) -> str:
-        output = self._output_path(filepath, ".docx")
+    def render_page_to_doc(self, doc, page_result, cell_cache: dict | None = None) -> None:
+        """PageResult(표 HTML + 본문) 를 번역해 docx 에 기록. 표 병합 보존."""
+        cache = cell_cache if cell_cache is not None else {}
 
-        with open(filepath, "rb") as f:
-            pdf_bytes = f.read()
+        def translate_cell(text: str) -> str:
+            t = text.strip()
+            if not t or t.replace(".", "").replace(",", "").replace("%", "").isdigit():
+                return text
+            if t not in cache:
+                self._check_cancel()
+                cache[t] = self._translate_and_notify(t) or text
+            return cache[t]
 
-        logger.info(f"PDF-DEBUG: file loaded, size={len(pdf_bytes)} bytes")
-
-        page_texts: list[str] = []
-
-        # 1) pypdf로 텍스트 추출 시도
-        if PdfReader is not None:
-            try:
-                import io
-                reader = PdfReader(io.BytesIO(pdf_bytes), strict=False)
-                total = len(reader.pages)
-                for page_num, page in enumerate(reader.pages):
-                    self._check_cancel()
-                    if cb:
-                        cb(page_num + 1, total, f"PDF 텍스트 추출 중... 페이지 {page_num+1}/{total}")
-                    try:
-                        text = page.extract_text() or ""
-                    except _EXTRACT_ERRORS:
-                        text = ""
-                    page_texts.append(text)
-            except _EXTRACT_ERRORS:
-                logger.error("PDF-01: pypdf failed")
-                page_texts = []
-
-        # 2) pypdf가 실패했거나 페이지 수를 못 얻은 경우 PyMuPDF로 재시도
-        if not page_texts and pymupdf is not None:
-            try:
-                pdf_doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-                try:
-                    for page_num in range(len(pdf_doc)):
-                        self._check_cancel()
-                        page_texts.append(pdf_doc[page_num].get_text() or "")
-                finally:
-                    pdf_doc.close()
-            except _EXTRACT_ERRORS:
-                logger.error("PDF-02: PyMuPDF text extraction failed")
-                page_texts = []
-
-        if not page_texts:
-            raise RuntimeError(
-                "PDF 처리 실패: 페이지를 읽을 수 없습니다. "
-                "(PyMuPDF 모듈이 누락되어 OCR 폴백이 동작하지 않을 수 있습니다.)"
-            )
-
-        # 3) 텍스트가 부족한 페이지는 OCR 폴백
-        ocr_capable = pymupdf is not None and pytesseract is not None and Image is not None
-        ocr_attempted = False
-        for page_num, text in enumerate(page_texts):
-            if len(text.strip()) >= 10:
-                continue
-            if not ocr_capable:
-                continue
-            self._check_cancel()
-            if cb:
-                cb(page_num + 1, len(page_texts), f"PDF OCR 중... 페이지 {page_num+1}/{len(page_texts)}")
-            ocr_text = self._ocr_pdf_page_from_bytes(pdf_bytes, page_num)
-            if not ocr_text:
-                ocr_text = self._ocr_pdf_page(filepath, page_num)
-            if ocr_text:
-                page_texts[page_num] = ocr_text
-                ocr_attempted = True
-
-        full_text = "\n\n".join(t.strip() for t in page_texts if t and t.strip())
-        if not full_text.strip():
-            if not ocr_capable:
-                raise RuntimeError(
-                    "PDF 처리 실패: 텍스트 레이어가 없는 PDF입니다. "
-                    "OCR이 필요하지만 PyMuPDF 또는 Tesseract가 사용 가능하지 않습니다."
-                )
-            raise RuntimeError(
-                "PDF 처리 실패: 모든 페이지에서 텍스트를 추출하지 못했습니다. "
-                "(OCR 시도 여부: " + ("yes" if ocr_attempted else "no") + ")"
-            )
-
-        self._notify_extract(full_text)
-
-        # 4) 번역 및 docx 작성
-        doc = Document()
-        total = len(page_texts)
-        for page_num, text in enumerate(page_texts):
-            self._check_cancel()
-            if cb:
-                cb(page_num + 1, total, f"PDF 번역 중... 페이지 {page_num+1}/{total}")
-            if text and text.strip():
-                translated = self._translate_and_notify(text.strip())
-                if translated:
-                    self._add_translated_text(doc, translated)
-            if page_num < total - 1:
-                doc.add_page_break()
-
-        doc.save(output)
-        return output
-
-    # ------------------------------------------------------------------
-    # OCR
-    # ------------------------------------------------------------------
-    def _ocr_pdf_page(self, filepath: str, page_num: int) -> str:
-        if pymupdf is None or pytesseract is None or Image is None:
-            return ""
-        pdf_doc = None
-        try:
-            pdf_doc = pymupdf.open(filepath)
-            page = pdf_doc[page_num]
-            mat = pymupdf.Matrix(300 / 72, 300 / 72)
-            pix = page.get_pixmap(matrix=mat)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            pdf_doc.close()
-            pdf_doc = None
-            ocr_lang = self.translator.get_ocr_lang()
-            return self._safe_ocr(img, ocr_lang)
-        except FileNotFoundError:
-            logger.error("ERROR-03: PDF file not found")
-        except IndexError:
-            logger.error("ERROR-04: Invalid page number")
-        except pytesseract.TesseractError:
-            logger.error("ERROR-05: Tesseract engine error")
-        except Exception:
-            logger.error("ERROR-06: Unexpected OCR failure")
-        finally:
-            if pdf_doc is not None:
-                pdf_doc.close()
-        return ""
-
-    def _ocr_pdf_page_from_bytes(self, pdf_bytes: bytes, page_num: int) -> str:
-        if pymupdf is None or pytesseract is None or Image is None:
-            return ""
-        pdf_doc = None
-        try:
-            pdf_doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-            page = pdf_doc[page_num]
-            mat = pymupdf.Matrix(300 / 72, 300 / 72)
-            pix = page.get_pixmap(matrix=mat)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            pdf_doc.close()
-            pdf_doc = None
-            ocr_lang = self.translator.get_ocr_lang()
-            return self._safe_ocr(img, ocr_lang)
-        except _EXTRACT_ERRORS:
-            logger.error("ERROR-07: OCR from bytes failed")
-        finally:
-            if pdf_doc is not None:
-                pdf_doc.close()
-        return ""
-
-    def _safe_ocr(self, img, ocr_lang: str) -> str:
-        """Windows에서 콘솔 창이 뜨지 않도록 subprocess.Popen 래핑."""
-        import subprocess
-
-        original_popen = subprocess.Popen
-
-        def patched_popen(*args, **kwargs):
-            if sys.platform == "win32":
-                startupinfo = kwargs.get("startupinfo") or subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                kwargs["startupinfo"] = startupinfo
-                if "stdin" not in kwargs:
-                    kwargs["stdin"] = subprocess.DEVNULL
-            return original_popen(*args, **kwargs)
-
-        subprocess.Popen = patched_popen
-        try:
-            try:
-                return pytesseract.image_to_string(img, lang=ocr_lang)
-            except UnicodeDecodeError:
-                # 문자열 디코딩 실패 시 바이트 출력으로 재시도한다(아래 BYTES 경로).
-                logger.debug("OCR-DEC: 문자열 디코딩 실패, 바이트 출력으로 재시도")
-
-            raw = pytesseract.image_to_string(
-                img, lang=ocr_lang, output_type=pytesseract.Output.BYTES
-            )
-            for enc in ("utf-8", "cp949", "euc-kr", "latin-1"):
-                try:
-                    return raw.decode(enc)
-                except (UnicodeDecodeError, AttributeError):
-                    continue
-            return raw.decode("utf-8", errors="replace")
-        finally:
-            subprocess.Popen = original_popen
+        if getattr(page_result, "kind", "ocr") == "text":
+            body = "\n".join(page_result.text_blocks).strip()
+            if body:
+                translated = self._translate_and_notify(body)
+                self._add_translated_text(doc, translated or body)
+            return
+        for html in page_result.table_htmls:
+            grid = parse_table_html(html)
+            build_docx_table(doc, grid, translate=translate_cell)
+            doc.add_paragraph("")
+        body = "\n".join(page_result.text_blocks).strip()
+        if body:
+            translated = self._translate_and_notify(body)
+            self._add_translated_text(doc, translated or body)
 
     # ------------------------------------------------------------------
     # TXT
@@ -488,49 +331,3 @@ class FileTranslator:
         prs.save(output)
         return output
 
-    # ------------------------------------------------------------------
-    # Image
-    # ------------------------------------------------------------------
-    def _translate_image(self, filepath: str, cb: Optional[ProgressCallback]) -> str:
-        if pytesseract is None or Image is None:
-            raise ImportError("pytesseract, Pillow 필요")
-
-        if cb:
-            cb(1, 3, "OCR 텍스트 추출 중...")
-
-        img = Image.open(filepath)
-        ocr_lang = self.translator.get_ocr_lang()
-        try:
-            text = self._safe_ocr(img, ocr_lang)
-        except _EXTRACT_ERRORS as ocr_err:
-            raise RuntimeError(f"OCR 실행 실패 ({type(ocr_err).__name__})")
-
-        if cb:
-            cb(2, 3, "OCR 텍스트 저장 중...")
-
-        self._save_intermediate_text(filepath, text, suffix="_ocr_source.txt")
-        self._notify_extract(text)
-
-        if not text or not text.strip():
-            raise RuntimeError("OCR 결과가 비어 있어 번역할 수 없습니다.")
-
-        if cb:
-            cb(3, 3, "FabriX 번역 중...")
-
-        doc = Document()
-        paragraphs = re.split(r"\n{2,}", text.strip())
-        total = len(paragraphs) or 1
-        for i, para in enumerate(paragraphs):
-            self._check_cancel()
-            if cb:
-                cb(3, 3, f"FabriX 번역 중... 문단 {i+1}/{total}")
-            if para.strip():
-                translated = self._translate_and_notify(para.strip())
-                doc.add_paragraph(translated or para)
-            else:
-                doc.add_paragraph("")
-
-        src = Path(filepath)
-        output = str(self._result_dir(filepath) / f"{src.stem}_translated.docx")
-        doc.save(output)
-        return output
