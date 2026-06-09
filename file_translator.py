@@ -2,19 +2,15 @@
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from constants import EXTRACT_DIR_NAME, IMAGE_EXTENSIONS, INPUT_DIR_NAME, RESULT_DIR_NAME
 from dependencies import (
     Document,
-    Image,
-    PdfReader,
     Presentation,
     Pt,
     load_workbook,
-    pymupdf,
 )
 from table_grid import parse_table_html, build_docx_table
 from logging_config import logger
