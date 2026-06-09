@@ -1,0 +1,7 @@
+vendor/
+build/
+dist/
+__pycache__/
+*.pyc
+.paddlex/
+*.json.tmp
