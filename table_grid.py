@@ -47,3 +47,25 @@ def parse_table_html(html: str) -> TableGrid:
             c += colspan
             n_cols = max(n_cols, c)
     return TableGrid(len(rows), n_cols, cells)
+
+
+def build_docx_table(document, grid: TableGrid, translate: Callable[[str], str]):
+    if grid.n_rows == 0 or grid.n_cols == 0:
+        return None
+    table = document.add_table(rows=grid.n_rows, cols=grid.n_cols)
+    try:
+        table.style = "Table Grid"
+    except KeyError:
+        pass
+    for cell in grid.cells:
+        origin = table.cell(cell.row, cell.col)
+        if cell.rowspan > 1 or cell.colspan > 1:
+            far = table.cell(
+                min(cell.row + cell.rowspan - 1, grid.n_rows - 1),
+                min(cell.col + cell.colspan - 1, grid.n_cols - 1),
+            )
+            target = origin.merge(far)
+        else:
+            target = origin
+        target.text = translate(cell.text) if cell.text else ""
+    return table

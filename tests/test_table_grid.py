@@ -34,3 +34,17 @@ def test_tolerates_unclosed_tbody():
     html = "<html><body><table><tr><td>A</td><td>B</td></tr></tbody></table></body></html>"
     g = parse_table_html(html)
     assert (g.n_rows, g.n_cols) == (1, 2)
+
+
+from docx import Document
+from table_grid import build_docx_table
+
+
+def test_build_docx_merges_and_translates():
+    g = parse_table_html("<table><tr><td colspan='2'>Header</td></tr><tr><td>a</td><td>b</td></tr></table>")
+    doc = Document()
+    table = build_docx_table(doc, g, translate=lambda s: s.upper())
+    assert (len(table.rows), len(table.columns)) == (2, 2)
+    assert table.cell(0, 0)._tc is table.cell(0, 1)._tc  # 병합됨
+    assert table.cell(0, 0).text == "HEADER"
+    assert table.cell(1, 1).text == "B"
