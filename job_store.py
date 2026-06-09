@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, replace
 from pathlib import Path
 from typing import Optional
 
@@ -57,10 +57,15 @@ class JobStore:
             return j
 
     def get(self, job_id: str) -> Optional[Job]:
-        return self._jobs.get(job_id)
+        # 락 하에 스냅샷 복사본을 반환한다. 호출자가 받은 객체를 읽는 동안
+        # 다른 스레드의 update() 가 내부 Job 을 변경해도 경합이 없다(불변 스냅샷).
+        with self._lock:
+            j = self._jobs.get(job_id)
+            return replace(j) if j is not None else None
 
     def list(self) -> list[Job]:
-        return list(self._jobs.values())
+        with self._lock:
+            return [replace(j) for j in self._jobs.values()]
 
     def remove(self, job_id: str) -> None:
         with self._lock:
