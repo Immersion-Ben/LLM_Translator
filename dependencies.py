@@ -38,10 +38,13 @@ try:
 except ImportError:
     Image = None
 
+# OCR 엔진: PaddleOCR (Tesseract 완전 대체). 무거운 import 는 사용 시점까지 미룬다.
 try:
-    import pytesseract
-except ImportError:
-    pytesseract = None
+    import importlib.util as _ilu
+    PADDLE_AVAILABLE = _ilu.find_spec("paddle") is not None and _ilu.find_spec("paddleocr") is not None
+except (ImportError, ValueError):
+    PADDLE_AVAILABLE = False
+pytesseract = None  # 잔존 참조 안전 처리(이후 제거)
 
 try:
     from openpyxl import load_workbook

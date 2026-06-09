@@ -175,34 +175,23 @@ class ConfigManager:
     # ------------------------------------------------------------------
     # Tesseract
     # ------------------------------------------------------------------
-    def apply_tesseract_path(self) -> None:
-        """내장된 Tesseract 또는 저장된 경로를 적용."""
-        if pytesseract is None:
-            return
-
-        search_paths: list[str] = []
+    def paddleocr_model_root(self):
+        """번들/캐시된 PaddleOCR 모델 루트. _MEIPASS→exe폴더→vendor→~/.paddlex 순."""
+        import os, sys
+        from pathlib import Path
+        from constants import PADDLE_VENDOR_DIRNAME
+        candidates = []
         if getattr(sys, "frozen", False):
-            search_paths.append(os.path.dirname(sys.executable))
-            meipass = getattr(sys, "_MEIPASS", "")
-            if meipass:
-                search_paths.append(meipass)
-        else:
-            search_paths.append(os.path.abspath("."))
+            candidates.append(Path(os.path.dirname(sys.executable)) / PADDLE_VENDOR_DIRNAME)
+            mp = getattr(sys, "_MEIPASS", "")
+            if mp:
+                candidates.append(Path(mp) / PADDLE_VENDOR_DIRNAME)
+        candidates.append(Path(__file__).resolve().parent / "vendor" / PADDLE_VENDOR_DIRNAME)
+        candidates.append(Path.home() / ".paddlex" / "official_models")
+        for c in candidates:
+            if c.is_dir():
+                return c
+        return None
 
-        tess_path = None
-        for base_path in search_paths:
-            candidate = os.path.join(base_path, "Tesseract-OCR", "tesseract.exe")
-            if os.path.exists(candidate):
-                tess_path = candidate
-                break
-
-        if not tess_path:
-            saved = self.config.get("tesseract_path", "").strip()
-            if saved and os.path.exists(saved):
-                tess_path = saved
-
-        if tess_path and os.path.exists(tess_path):
-            pytesseract.pytesseract.tesseract_cmd = tess_path
-            tessdata_dir = Path(tess_path).parent / "tessdata"
-            if tessdata_dir.exists():
-                os.environ["TESSDATA_PREFIX"] = str(tessdata_dir)
+    def apply_tesseract_path(self) -> None:
+        return  # no-op 셰임(호출부 보호, 이후 제거)

@@ -76,6 +76,37 @@ OCR_LANG_MAP: dict[str, str] = {
     "Malay": "msa",
 }
 
+# OCR 산출물 폴더(원본 옆), 번역결과(번역결과)와 동격
+OCR_DIR_NAME = "OCR결과"
+
+# 중앙 색인(재시작 목록 복원용)
+JOBS_INDEX_PATH = "~/.llm_translator/jobs.json"
+
+# 작업 상태 / 모드
+class JobStatus:
+    QUEUED = "QUEUED"
+    OCR_RUNNING = "OCR_RUNNING"
+    OCR_DONE = "OCR_DONE"
+    TRANS_QUEUED = "TRANS_QUEUED"
+    TRANSLATING = "TRANSLATING"
+    DONE = "DONE"
+    FAILED = "FAILED"
+
+MODE_FULL = "full"
+MODE_OCR_ONLY = "ocr_only"
+
+# PaddleOCR 오프라인 모델
+PADDLE_VENDOR_DIRNAME = "paddleocr-models"
+PADDLE_MODELS: dict[str, str] = {
+    "layout_detection_model_name": "PP-DocLayout-L",
+    "table_classification_model_name": "PP-LCNet_x1_0_table_cls",
+    "wired_table_structure_recognition_model_name": "SLANeXt_wired",
+    "wired_table_cells_detection_model_name": "RT-DETR-L_wired_table_cell_det",
+    "doc_orientation_classify_model_name": "PP-LCNet_x1_0_doc_ori",
+    "text_detection_model_name": "PP-OCRv4_server_det",
+    "text_recognition_model_name": "PP-OCRv4_server_rec_doc",
+}
+
 DEFAULT_SRC = "베트남어"
 DEFAULT_TGT = "한국어"
 
