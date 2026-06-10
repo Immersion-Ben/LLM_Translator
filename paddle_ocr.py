@@ -2,14 +2,41 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from constants import PADDLE_MODELS
+from constants import PADDLE_MODELS, PADDLE_VENDOR_DIRNAME
 from logging_config import logger
 
+
+def _bundled_cache_home() -> Optional[Path]:
+    """오프라인 번들된 PaddleX 캐시 루트(하위에 official_models/ 보유) 탐지.
+
+    frozen(exe) 에서는 _MEIPASS/exe폴더, 개발 모드에서는 vendor/ 를 본다.
+    prepare_paddleocr.py 가 만든 <root>/official_models 가 있으면 그 <root> 를 반환."""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(os.path.dirname(sys.executable)) / PADDLE_VENDOR_DIRNAME)
+        mp = getattr(sys, "_MEIPASS", "")
+        if mp:
+            candidates.append(Path(mp) / PADDLE_VENDOR_DIRNAME)
+    candidates.append(Path(__file__).resolve().parent / "vendor" / PADDLE_VENDOR_DIRNAME)
+    for c in candidates:
+        if (c / "official_models").is_dir():
+            return c
+    return None
+
+
+# 오프라인 동작 보장: 모델 소스 체크 비활성 + 번들 캐시가 있으면 그쪽을 PaddleX
+# 캐시 홈으로 지정한다. PaddleX 는 <PADDLE_PDX_CACHE_HOME>/official_models/<모델>
+# 이 존재하면 인터넷 hoster 를 전혀 호출하지 않는다(없을 때만 다운로드 시도).
+# 무거운 paddleocr/paddlex import 이전에 환경을 설정해야 적용된다.
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+_OFFLINE_CACHE = _bundled_cache_home()
+if _OFFLINE_CACHE is not None:
+    os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(_OFFLINE_CACHE))
 
 
 @dataclass
