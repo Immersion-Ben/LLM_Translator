@@ -153,7 +153,8 @@ def run_selftest(out_path: Path) -> bool:
         ok = bool(page.table_htmls and "<table" in page.table_htmls[0].lower())
         detail = "OK" if ok else "FAIL: table not detected"
     except Exception as e:  # noqa: BLE001 — 진단 결과로 남기는 것이 목적
-        ok, detail = False, f"FAIL: {type(e).__name__}: {e}"
+        import traceback
+        ok, detail = False, f"FAIL: {type(e).__name__}: {e}\n\n{traceback.format_exc()}"
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(detail, encoding="utf-8")

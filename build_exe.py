@@ -36,6 +36,29 @@ _HIDDEN_IMPORTS = [
     "shapely", "pyclipper", "scipy", "sklearn", "skimage",
     "lxml", "premailer", "tokenizers", "ftfy",
 ]
+# paddlex 는 importlib.metadata.requires("paddlex") 로 의존성 존재/버전을 검사
+# 하므로 본체뿐 아니라 의존성 트리 전체의 dist-info 를 함께 번들해야 한다.
+_RECURSIVE_METADATA = ["paddlex", "paddleocr"]
+
+
+def _paddle_dep_metadata() -> list[str]:
+    """paddlex/paddleocr 의 직접 의존성 중 설치된 패키지 이름 목록.
+
+    paddlex 의 require_extra('ocr') 는 extra 마커가 붙은 의존성의 dist-info 존재를
+    검사하는데, --recursive-copy-metadata 는 extra 의존성을 따라가지 않으므로
+    설치된 직접 의존성 전부를 --copy-metadata 로 명시 번들한다."""
+    import importlib.metadata as md
+    from packaging.requirements import Requirement
+    names: set[str] = set()
+    for dist in ("paddlex", "paddleocr"):
+        for spec in md.requires(dist) or []:
+            try:
+                name = Requirement(spec).name
+                md.version(name)
+            except Exception:  # noqa: BLE001 — 미설치/파싱 불가 의존성은 건너뜀
+                continue
+            names.add(name)
+    return sorted(names)
 
 
 def _project_root() -> Path:
@@ -59,6 +82,10 @@ def _build_command(root: Path, models: Path | None) -> list[str]:
         cmd += ["--collect-all", pkg]
     for mod in _HIDDEN_IMPORTS:
         cmd += ["--hidden-import", mod]
+    for pkg in _RECURSIVE_METADATA:
+        cmd += ["--recursive-copy-metadata", pkg]
+    for pkg in _paddle_dep_metadata():
+        cmd += ["--copy-metadata", pkg]
     # 드래그앤드롭(선택 의존성)이 설치돼 있으면 함께 수집
     try:
         import tkinterdnd2  # noqa: F401
