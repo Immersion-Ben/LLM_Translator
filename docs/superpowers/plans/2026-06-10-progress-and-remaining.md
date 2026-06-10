@@ -60,6 +60,30 @@
 추가: `--selftest-ocr` 자가진단 모드 신설(결과: 종료코드 + ~/.llm_translator/
 selftest_ocr.txt), 버전 3.1.0-alpha.
 
+## 🐞 잔여작업 0 — 텍스트 레이어 PDF 가 표 보존 OCR 을 우회하는 문제 (최우선)
+
+**증상** (2026-06-10 저녁 발견): "OCR만" 으로 디지털 PDF(test.pdf, 표 포함)를 돌리면
+작업이 즉시 OCR_DONE 으로 끝나고, 산출 JSON 에 표가 평문으로 뭉개진
+`kind:"text"` 페이지만 남는다. PaddleOCR 은 아예 실행되지 않음(pipeline ready 로그 없음).
+
+**원인** (확정, 고장 아님): `ocr_document.iter_pages` 의 분류 규칙 —
+페이지 텍스트 레이어가 10자 이상이면 OCR 을 건너뛰고 텍스트를 그대로 yield
+(`ocr_document.py:50` 부근 `if len(txt.strip()) >= 10:`). 스캔 PDF 최적화로 넣은
+분기가 표 있는 디지털 PDF 에서 표 보존 목적을 무력화.
+
+**결정된 수정 방향 (사용자 확정)**: **항상 강제 OCR** — OCR 경로(OCR만/OCR+번역
+모두)에서는 텍스트 레이어를 무시하고 모든 페이지를 PaddleOCR 로 처리한다.
+
+**구현 메모**:
+1. `iter_pages` 의 text-layer 분기(49~52행) 제거 — `pdf_text_extractor` 파라미터와
+   호출부(job_manager/page_pipeline 의 인자 전달)도 함께 정리.
+2. 관련 테스트 갱신: text 분기를 검증하는 기존 테스트가 있으면 강제 OCR 기대로 변경,
+   "텍스트 레이어 있는 PDF 도 kind=ocr" 테스트 추가 (TDD).
+3. `kind:"text"` 를 소비하는 하류(번역 단계/render_page_to_doc)가 있는지 확인 후
+   dead path 정리 여부 결정.
+4. 수정 후: `pytest` → `python build_exe.py` 재빌드 → 차단망 selftest + test.pdf
+   재실행으로 표 HTML 산출 확인 → zip 재배포.
+
 ## ⏭ 남은 실기 검증 (사용자 수행)
 
 1. **frozen 오프라인 실기 검증** — 인터넷 끊긴 PC 에서 zip 을 풀고
