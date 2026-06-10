@@ -11,6 +11,44 @@ from constants import PADDLE_MODELS, PADDLE_VENDOR_DIRNAME
 from logging_config import logger
 
 
+def _ascii_safe_dir(path: Path) -> Path:
+    """paddle C++ 엔진이 Windows 에서 비ASCII 경로의 파일을 열지 못하므로
+    (빈 스트림 → "parse error ... empty input"), 한글 등 비ASCII 경로를
+    ASCII 경로로 변환한다: 8.3 short path 우선, 안되면 ASCII 위치에 junction."""
+    s = str(path)
+    if s.isascii() or sys.platform != "win32":
+        return path
+    import ctypes
+    buf = ctypes.create_unicode_buffer(len(s) + 260)
+    n = ctypes.windll.kernel32.GetShortPathNameW(s, buf, len(buf))
+    if 0 < n < len(buf) and buf.value.isascii():
+        return Path(buf.value)
+    import _winapi
+    import hashlib
+    # 대상 경로별로 junction 을 분리(해시 suffix) — 고정 단일 경로면 다른 대상을
+    # 변환할 때 기존 링크를 가로채 모델 해석이 깨진다.
+    tag = hashlib.sha1(os.path.normcase(s).encode("utf-8")).hexdigest()[:8]
+    for base in (os.environ.get("PUBLIC"), os.environ.get("ProgramData")):
+        if not base or not base.isascii():
+            continue
+        link = Path(base) / ".llm_translator" / f"pdx_{tag}"
+        try:
+            link.parent.mkdir(parents=True, exist_ok=True)
+            if link.exists():
+                try:
+                    if os.path.samefile(link, path):
+                        return link
+                except OSError:
+                    pass
+                link.rmdir()  # junction 은 rmdir 로 링크만 제거됨
+            _winapi.CreateJunction(s, str(link))
+            return link
+        except OSError:
+            continue
+    logger.warning("PADDLE: 비ASCII 모델 경로를 ASCII 로 변환하지 못함 — 모델 로드 실패 가능: %s", s)
+    return path
+
+
 def _bundled_cache_home() -> Optional[Path]:
     """오프라인 번들된 PaddleX 캐시 루트(하위에 official_models/ 보유) 탐지.
 
@@ -36,7 +74,7 @@ def _bundled_cache_home() -> Optional[Path]:
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 _OFFLINE_CACHE = _bundled_cache_home()
 if _OFFLINE_CACHE is not None:
-    os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(_OFFLINE_CACHE))
+    os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(_ascii_safe_dir(_OFFLINE_CACHE)))
 
 
 @dataclass

@@ -1,5 +1,27 @@
+import sys
+
 import pytest
 from dependencies import PADDLE_AVAILABLE
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="windows path encoding issue")
+def test_ascii_safe_dir_converts_non_ascii_path(tmp_path):
+    from paddle_ocr import _ascii_safe_dir
+    korean = tmp_path / "한글 폴더"
+    korean.mkdir()
+    (korean / "marker.txt").write_text("x", encoding="utf-8")
+    safe = _ascii_safe_dir(korean)
+    try:
+        assert str(safe).isascii()
+        assert (safe / "marker.txt").is_file()
+    finally:
+        if safe != korean and safe.is_junction():
+            safe.rmdir()
+
+
+def test_ascii_safe_dir_keeps_ascii_path(tmp_path):
+    from paddle_ocr import _ascii_safe_dir
+    assert _ascii_safe_dir(tmp_path) == tmp_path
 
 
 @pytest.mark.skipif(not PADDLE_AVAILABLE, reason="paddleocr not installed")
