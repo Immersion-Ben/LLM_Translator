@@ -42,32 +42,30 @@
   `official_models/` 가 있으면 `PADDLE_PDX_CACHE_HOME` 을 그 위치로 자동 지정 →
   인터넷 없이 모든 모델 로컬 해석.
 
-## ⏭ 잔여작업 (재개 시)
+## ✅ 잔여작업 1~4 완료 (2026-06-10 오후, 커밋 01bc66c~b4dd103)
 
-1. **모델 번들 생성** (인터넷 되는 PC, ~/.paddlex 캐시 필요)
-   ```
-   python prepare_paddleocr.py
-   ```
-   → `vendor/paddleocr-models/official_models/` 에 9개 모델(~800MB+) 복사.
+1. ~~모델 번들 생성~~ — `vendor/paddleocr-models/official_models/` 9개 모델(1.28GB).
+2. ~~오프라인 동작 검증~~ — 네트워크 차단(죽은 프록시+HF_HUB_OFFLINE) 상태에서
+   합성 표 인식 DONE. 이 과정에서 발견·수정한 결함 2건:
+   - **한글(비ASCII) 경로 결함**: paddle C++ 이 비ASCII 경로의 모델 파일을 못 열어
+     "parse error … empty input" 발생. → `paddle_ocr._ascii_safe_dir` 가 8.3 short
+     path 또는 ASCII 위치(Public/ProgramData) 대상별 해시 junction 으로 자동 우회.
+   - **frozen 의존성 메타데이터 결함**: paddlex `require_extra('ocr')` 가
+     의존성 dist-info 를 importlib.metadata 로 검사 → `build_exe._paddle_dep_metadata`
+     가 paddlex/paddleocr 직접 의존성(50개)을 동적 추출해 `--copy-metadata` 번들.
+3. ~~exe 빌드~~ — `dist\python\` 2.1GB, `LLMTranslator_v3.1.0-alpha_full.zip` 1.28GB.
+4. ~~frozen 오프라인 구동 검증(로컬)~~ — 네트워크 차단 + `python.exe --selftest-ocr`
+   → ExitCode 0 / OK, GUI 부팅 확인. 단위 테스트 17 passed.
 
-2. **오프라인 동작 검증** (네트워크 차단 상태로 파이프라인 생성·인식)
-   - 별도 프로세스에서 `PADDLE_PDX_CACHE_HOME=<…>/vendor/paddleocr-models`,
-     `PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True`, `HF_HUB_OFFLINE=1`,
-     죽은 프록시(`HTTP(S)_PROXY=http://127.0.0.1:9`) 로 합성 표 인식 → DONE 확인.
+추가: `--selftest-ocr` 자가진단 모드 신설(결과: 종료코드 + ~/.llm_translator/
+selftest_ocr.txt), 버전 3.1.0-alpha.
 
-3. **단일 실행 배포본(exe) 빌드** — Python·패키지·모델 없이 구동
-   ```
-   pip install pyinstaller
-   python build_exe.py            # dist\python\python.exe + LLMTranslator_v*_full.zip
-   ```
-   - PyInstaller onedir + `--collect-all paddle/paddleocr/paddlex` +
-     `vendor/paddleocr-models` 번들. 산출 zip 을 대상 PC 에 풀어 `python.exe` 실행.
-   - ⚠ paddle 포함으로 산출물이 수 GB. 빌드 10~30분. hidden-import 누락 시
-     `build_exe.py` 의 `_HIDDEN_IMPORTS` 보강 필요할 수 있음.
+## ⏭ 남은 실기 검증 (사용자 수행)
 
-4. **frozen 오프라인 실기 검증** — 인터넷 끊긴 PC 에서 zip 풀어 PDF/이미지 번역.
-
-5. **실제 중국어 PDF + 사내 LLM 육안 검증** — 표 병합/번역 품질 확인(사내 오프라인망).
+1. **frozen 오프라인 실기 검증** — 인터넷 끊긴 PC 에서 zip 을 풀고
+   `python.exe --selftest-ocr` 실행 → `~/.llm_translator/selftest_ocr.txt` 가 OK 면
+   OCR 스택 정상. 이후 GUI 로 PDF/이미지 번역.
+2. **실제 중국어 PDF + 사내 LLM 육안 검증** — 표 병합/번역 품질 확인(사내 오프라인망).
 
 ## 🛠 환경 재구성 (재시작 후)
 
