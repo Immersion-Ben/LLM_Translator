@@ -1,0 +1,26 @@
+# --- 빌드 산출물 (재생성 가능 / GitHub 100MB 단일파일 제한 초과) ---
+# dist 폴더와 풀 zip(약 285MB 단일파일)은 source + vendor 로 재빌드 가능하므로 제외.
+#   재빌드:  python build_exe.py
+dist/
+build/
+*.zip
+
+# vendor/Tesseract-OCR 는 PC 초기화 대비로 저장소에 포함합니다(재다운로드 불필요).
+# 단, 다운로드 staging 폴더(중복 데이터)는 제외.
+_tessdata_src/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- 런타임/로컬 설정 (민감정보) ---
+config.json
+.llm_translator/
+
+# --- OS / 임시 ---
+.DS_Store
+Thumbs.db
+_ocr_test*.png
+_ocr_selftest.py

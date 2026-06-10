@@ -1,0 +1,23 @@
+# LLM Translator — 런타임 의존성 (Tesseract 기반, 보안검토 반영본)
+# Python 3.13 기준. 사내 오프라인망 배포 시 동일 버전 휠을 미리 받아 두세요.
+
+# --- 코어 ---
+requests==2.33.1
+python-docx==1.2.0
+openpyxl==3.1.5
+python-pptx==1.0.2
+pypdf==6.10.2
+PyMuPDF==1.27.2.3
+pillow==12.2.0
+certifi==2026.4.22
+
+# --- OCR: Tesseract (pytesseract 래퍼) ---
+# 엔진 바이너리(tesseract.exe)+언어팩은 vendor/Tesseract-OCR 로 번들된다.
+# 빌드: python prepare_tesseract.py  →  python build_exe.py
+pytesseract==0.3.13
+
+# --- 선택: 드래그앤드롭 (없으면 자동 비활성화) ---
+tkinterdnd2==0.4.3
+
+# --- 빌드/패키징 ---
+pyinstaller==6.20.0
