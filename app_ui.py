@@ -22,6 +22,10 @@ from constants import (
     DEFAULT_SRC,
     DEFAULT_TGT,
     IMAGE_EXTENSIONS,
+    JOBS_INDEX_PATH,
+    JobStatus,
+    MODE_FULL,
+    MODE_OCR_ONLY,
     SOURCE_LANGUAGES,
     SUPPORTED_EXTENSIONS,
     TARGET_LANGUAGES,
@@ -29,7 +33,10 @@ from constants import (
 )
 from dependencies import DND_AVAILABLE, DND_FILES, TkinterDnD
 from file_translator import FileTranslator
+from job_manager import JobManager
+from job_store import JobStore
 from logging_config import logger
+from paddle_ocr import PaddleTableOCR
 from settings_dialog import SettingsDialog
 from time_estimator import (
     Estimate,
@@ -86,6 +93,7 @@ DARK = {
 # 파일 상태
 STATUS_PENDING = "대기"
 STATUS_RUNNING = "진행 중"
+STATUS_OCR_DONE = "OCR완료"
 STATUS_DONE = "완료"
 STATUS_FAILED = "실패"
 STATUS_CANCELLED = "취소됨"
@@ -93,9 +101,21 @@ STATUS_CANCELLED = "취소됨"
 STATUS_COLORS = {
     STATUS_PENDING: ("#e8eaed", "#5f6368"),
     STATUS_RUNNING: ("#d2e3fc", "#1967d2"),
+    STATUS_OCR_DONE: ("#fef7e0", "#b06000"),
     STATUS_DONE: ("#ceead6", "#0d904f"),
     STATUS_FAILED: ("#fad2cf", "#c5221f"),
     STATUS_CANCELLED: ("#fef7e0", "#b06000"),
+}
+
+# JobManager 상태(JobStatus) → UI 파일 상태 매핑
+_JOB_STATUS_DISPLAY = {
+    JobStatus.QUEUED: STATUS_PENDING,
+    JobStatus.OCR_RUNNING: STATUS_RUNNING,
+    JobStatus.OCR_DONE: STATUS_OCR_DONE,
+    JobStatus.TRANS_QUEUED: STATUS_RUNNING,
+    JobStatus.TRANSLATING: STATUS_RUNNING,
+    JobStatus.DONE: STATUS_DONE,
+    JobStatus.FAILED: STATUS_FAILED,
 }
 
 
@@ -137,8 +157,6 @@ class TranslatorApp:
             self.palette = LIGHT if self.config.get("ui_theme") != "dark" else DARK
             self.root.configure(bg=self.palette["BG"])
 
-        self.config.apply_tesseract_path()
-
         # 번역 엔진 + 취소 이벤트
         self._cancel_event = threading.Event()
         self.translator = LLMTranslator(self.config, cancel_event=self._cancel_event)
@@ -156,11 +174,29 @@ class TranslatorApp:
         self.mode_var = tk.StringVar(
             value=self.config.get("translation_mode") or "deep"
         )
+        # OCR 산출 방식: full(OCR+번역) / ocr_only(OCR만 먼저)
+        self.ocr_output_mode = tk.StringVar(value=MODE_FULL)
+
+        # ---- OCR/번역 작업 큐 (PDF·이미지는 JobManager 경유) ----
+        # path↔job 매핑과 완료 신호용 이벤트. _run_translation 스레드가 OCR 작업
+        # 완료를 기다릴 때 사용한다(완료는 워커 스레드 → _on_job_change 로 통지).
+        self._job_by_path: dict[str, str] = {}   # source path -> job id
+        self._job_events: dict[str, threading.Event] = {}  # job id -> 완료 신호
+        self._job_store = JobStore(Path(JOBS_INDEX_PATH).expanduser())
+        self._ocr_engine = PaddleTableOCR(model_root=self.config.paddleocr_model_root())
+        self.jobs = JobManager(self._job_store, self.translator, self._ocr_engine,
+                               on_change=self._on_job_change)
+        self.jobs.start()
 
         self._build_ui()
         self._bind_shortcuts()
         if DND_AVAILABLE:
             self._enable_drag_drop()
+
+        # 종료 시 워커 정리
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        # 재시작 후 이전 작업 목록 복원
+        self._restore_jobs()
 
     # -------- DPI / geometry 헬퍼 ----------------------------------------
     @staticmethod
@@ -485,6 +521,24 @@ class TranslatorApp:
         self._mode_hint_var = tk.StringVar(value=self._mode_hint_text())
         tk.Label(inner, textvariable=self._mode_hint_var, font=self.fonts["sm"],
                  fg=p["TEXT_HINT"], bg=p["CARD"]).pack(side="right")
+
+        # PDF/이미지 OCR 산출 방식 (full=OCR+번역 / ocr_only=OCR만 먼저)
+        ocr_box = tk.Frame(inner, bg=p["CARD"])
+        ocr_box.pack(side="right", padx=(0, 16))
+        tk.Label(ocr_box, text="📄 PDF/이미지:", font=self.fonts["sm_b"],
+                 fg=p["TEXT_SEC"], bg=p["CARD"]).pack(side="left", padx=(0, 6))
+        for value, label in (
+            (MODE_FULL, "OCR+번역"),
+            (MODE_OCR_ONLY, "OCR만"),
+        ):
+            tk.Radiobutton(
+                ocr_box, text=label, variable=self.ocr_output_mode, value=value,
+                font=self.fonts["sm"], indicatoron=False,
+                activebackground=p["PRIMARY_LIGHT"], activeforeground=p["PRIMARY"],
+                selectcolor=p["PRIMARY_LIGHT"], relief="solid", bd=1,
+                highlightthickness=0, padx=8, pady=2, cursor="hand2",
+                fg=p["TEXT_SEC"], bg=p["CARD"],
+            ).pack(side="left", padx=(2, 0))
 
     def _refresh_mode_buttons(self) -> None:
         """라디오 버튼 색상을 현재 선택값에 맞춰 갱신."""
@@ -940,6 +994,11 @@ class TranslatorApp:
             self._cancel_event.clear()
             self.translator = LLMTranslator(self.config, cancel_event=self._cancel_event)
             self.file_translator = FileTranslator(self.translator)
+            # JobManager 의 번역기도 새 설정으로 교체
+            self.jobs.translator = self.translator
+            self.jobs.ft = FileTranslator(self.translator)
+            self._ocr_engine = PaddleTableOCR(model_root=self.config.paddleocr_model_root())
+            self.jobs.ocr_engine = self._ocr_engine
             # 테마/폰트 재적용이 필요하면 안내 (재시작 권장)
             new_theme = self.config.get("ui_theme")
             new_scale = self.config.get_float("font_scale", 1.0)
@@ -1133,6 +1192,15 @@ class TranslatorApp:
                   cursor="hand2", padx=4,
                   command=lambda f=filepath: self._remove_file(f)).pack(side="right")
 
+        # OCR만 완료된 작업에는 '번역 시작' 버튼 노출 (사용자가 원할 때 번역 큐 투입)
+        if status == STATUS_OCR_DONE and filepath in self._job_by_path:
+            tk.Button(row, text="▶ 번역", font=self.fonts["xs_b"],
+                      fg=p["PRIMARY"], bg=p["PRIMARY_LIGHT"],
+                      activebackground="#b6d4fe", relief="flat", bd=0,
+                      cursor="hand2", padx=8,
+                      command=lambda f=filepath: self._translate_ocr_job(f)).pack(
+                side="right", padx=(4, 0))
+
         # 예상 시간 뱃지 (제거 버튼 왼쪽). 추정 결과에 따라 텍스트/색 다르게.
         est = self.file_estimates.get(filepath)
         if est is None:
@@ -1261,6 +1329,13 @@ class TranslatorApp:
             def on_translate(text: str, _name=name) -> None:
                 self.root.after(0, lambda t=text: self._append_translated(t + "\n"))
 
+            # PDF/이미지는 OCR(표 보존) → 작업 큐(JobManager) 경유로 처리한다.
+            # 텍스트 문서(docx/txt/xlsx/pptx)만 기존 동기 경로로 직접 번역.
+            if is_ocr:
+                self._run_ocr_job(fp, idx, total, results)
+                self.root.after(0, self._refresh_file_list)
+                continue
+
             file_start = time.time()
             try:
                 def cb(cur: int, tot: int, msg: str) -> None:
@@ -1353,6 +1428,139 @@ class TranslatorApp:
             self.root.after(100, self._open_result_folder)
 
         self.root.after(0, self._reset_ui)
+
+    # ===================================================================
+    # OCR/번역 작업 큐 (PDF·이미지) — JobManager 연동
+    # ===================================================================
+    def _run_ocr_job(self, fp: str, idx: int, total: int, results: dict) -> None:
+        """PDF/이미지 1건을 JobManager 에 제출하고 완료까지 대기.
+
+        OCR+번역(full) 이면 DONE 까지, OCR만(ocr_only) 이면 OCR_DONE 까지 기다린다.
+        완료 통지는 워커 스레드 → _on_job_change → (메인스레드) _apply_job_change 가
+        이벤트를 set 하므로, 여기서는 이벤트로 깨어나 중앙 색인의 상태를 재확인한다."""
+        name = Path(fp).name
+        mode = self.ocr_output_mode.get() or MODE_FULL
+        ev = threading.Event()
+        file_start = time.time()
+        jid = self.jobs.submit(fp, mode)
+        self._job_by_path[fp] = jid
+        self._job_events[jid] = ev
+
+        if mode == MODE_OCR_ONLY:
+            terminal = {JobStatus.OCR_DONE, JobStatus.DONE, JobStatus.FAILED}
+        else:
+            terminal = {JobStatus.DONE, JobStatus.FAILED}
+
+        try:
+            while True:
+                if self._cancel_event.is_set():
+                    self.file_status[fp] = STATUS_CANCELLED
+                    results["cancelled"] += 1
+                    self._log("  ⏹ 취소됨 (현재 작업은 백그라운드에서 마무리됩니다)", "warn")
+                    return
+                job = self._job_store.get(jid)
+                st = job.status if job else JobStatus.FAILED
+                self._ocr_progress(idx, total, name, st)
+                if st in terminal:
+                    break
+                ev.wait(0.3)
+                ev.clear()
+        finally:
+            self._job_events.pop(jid, None)
+
+        if st == JobStatus.DONE:
+            results["ok"] += 1
+            if job and job.result_docx:
+                results["outputs"].append(job.result_docx)
+            self.file_status[fp] = STATUS_DONE
+            dur = time.time() - file_start
+            out_name = Path(job.result_docx).name if job and job.result_docx else name
+            self._log(f"  ✓ 완료 → {out_name} ({format_secs(dur)})", "success")
+        elif st == JobStatus.OCR_DONE:
+            results["ok"] += 1
+            self.file_status[fp] = STATUS_OCR_DONE
+            self._log("  ✓ OCR 완료 (번역 대기) — 목록의 '▶ 번역' 으로 번역 시작", "success")
+        else:  # FAILED
+            results["fail"] += 1
+            self.file_status[fp] = STATUS_FAILED
+            err = (job.error if job else "") or ""
+            self._log(f"  ✗ OCR/번역 실패 ({err or 'ERR'})", "error")
+
+    def _ocr_progress(self, idx: int, total: int, name: str, status: str) -> None:
+        frac = {
+            JobStatus.QUEUED: 0.05, JobStatus.OCR_RUNNING: 0.4,
+            JobStatus.OCR_DONE: 0.6, JobStatus.TRANS_QUEUED: 0.65,
+            JobStatus.TRANSLATING: 0.85, JobStatus.DONE: 1.0,
+            JobStatus.FAILED: 1.0,
+        }.get(status, 0.1)
+        overall = (idx / total + frac / total) * 100
+        self._update_progress(overall, name, f"OCR 작업: {status}")
+        self.root.after(0, lambda v=frac * 100: self.file_progress_var.set(v))
+        if status in (JobStatus.TRANSLATING, JobStatus.TRANS_QUEUED):
+            self.root.after(0, lambda: self._set_step(2))
+        else:
+            self.root.after(0, lambda: self._set_step(1))
+
+    def _on_job_change(self, job) -> None:
+        """워커 스레드에서 호출 — tkinter 메인 스레드로 마샬링."""
+        try:
+            self.root.after(0, lambda j=job: self._apply_job_change(j))
+        except RuntimeError:
+            # 앱 종료 중 tk 가 소멸된 경우 — 무시
+            pass
+
+    def _apply_job_change(self, job) -> None:
+        """(메인 스레드) 작업 상태 변화를 파일 행에 반영하고 대기 스레드를 깨운다."""
+        ev = self._job_events.get(job.id)
+        if ev is not None:
+            ev.set()
+        self._job_by_path.setdefault(job.source, job.id)
+        if job.source in self.selected_files:
+            self.file_status[job.source] = _JOB_STATUS_DISPLAY.get(
+                job.status, STATUS_PENDING)
+            self._refresh_file_list()
+        if job.status == JobStatus.DONE and job.result_docx:
+            self._results_output_dir = str(Path(job.result_docx).parent)
+            try:
+                self.btn_open_result.configure(state="normal")
+            except tk.TclError:
+                pass
+
+    def _translate_ocr_job(self, fp: str) -> None:
+        """OCR만 완료된 작업을 번역 큐에 투입(목록의 '▶ 번역' 버튼)."""
+        jid = self._job_by_path.get(fp)
+        if not jid:
+            return
+        self.jobs.request_translation(jid)
+        self.file_status[fp] = STATUS_RUNNING
+        self._refresh_file_list()
+        self._log(f"▶ 번역 요청: {Path(fp).name}", "info")
+
+    def _restore_jobs(self) -> None:
+        """재시작 후 중앙 색인에서 이전 작업을 목록에 복원."""
+        restored = 0
+        for job in self._job_store.list():
+            self._job_by_path.setdefault(job.source, job.id)
+            if job.source in self.selected_files:
+                continue
+            if not os.path.isfile(job.source):
+                continue
+            self.selected_files.append(job.source)
+            self.file_status[job.source] = _JOB_STATUS_DISPLAY.get(
+                job.status, STATUS_PENDING)
+            restored += 1
+        if restored:
+            self._refresh_file_list()
+            self._log(f"이전 작업 {restored}건 복원됨", "info")
+
+    def _on_close(self) -> None:
+        """창 종료 — 진행 중 작업을 멈추고 워커 정리."""
+        try:
+            self._cancel_event.set()
+            self.jobs.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        self.root.destroy()
 
     def _update_progress(self, pct: float, text: str, detail: str = "") -> None:
         pct = min(pct, 100)

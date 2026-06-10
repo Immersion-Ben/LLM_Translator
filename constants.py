@@ -52,30 +52,6 @@ TARGET_LANGUAGES: dict[str, str] = {
     "힌디어": "Hindi",
 }
 
-# OCR 언어 코드 매핑 (pytesseract용)
-OCR_LANG_MAP: dict[str, str] = {
-    "Vietnamese": "vie",
-    "English": "eng",
-    "Japanese": "jpn",
-    "Korean": "kor",
-    "Simplified Chinese": "chi_sim",
-    "Traditional Chinese": "chi_tra",
-    "Thai": "tha",
-    "Indonesian": "ind",
-    "French": "fra",
-    "German": "deu",
-    "Spanish": "spa",
-    "Russian": "rus",
-    "Arabic": "ara",
-    "Hindi": "hin",
-    "Portuguese": "por",
-    "Italian": "ita",
-    "Turkish": "tur",
-    "Polish": "pol",
-    "Dutch": "nld",
-    "Malay": "msa",
-}
-
 # OCR 산출물 폴더(원본 옆), 번역결과(번역결과)와 동격
 OCR_DIR_NAME = "OCR결과"
 

@@ -19,7 +19,7 @@ from security import validate_input_path
 ProgressCallback = Callable[[int, int, str], None]
 TextCallback = Callable[[str], None]
 
-# 외부 파서(pypdf/PyMuPDF/Tesseract)가 손상되거나 비정상적인 입력에 대해 던질 수 있는
+# 외부 파서(pypdf/PyMuPDF)가 손상되거나 비정상적인 입력에 대해 던질 수 있는
 # 예외들. 광범위한 ``except Exception`` 대신 구체적으로 명시하여(CWE-754) 폴백 동작은
 # 유지하되 예기치 못한 프로그래밍 오류는 그대로 전파되도록 한다.
 _EXTRACT_ERRORS: tuple[type[BaseException], ...] = (

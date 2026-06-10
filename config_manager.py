@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from dependencies import pytesseract
 from logging_config import logger
 from security import (
     mask_config,
@@ -29,7 +28,6 @@ DEFAULT_CONFIG: dict[str, str] = {
     "agent_id_fast": "",             # 빠른번역(RAG off) Agent ID. 비워두면 agent_id로 폴백
     "translation_mode": "deep",      # deep | fast. UI에서 즉시 전환 후 저장
     "email": "",
-    "tesseract_path": "",
     "max_chunk_chars": "",           # 빈 값이면 모드 기본값(fast=8000, deep=5000)
     "timeout_seconds": "120",
     "allow_insecure_ssl": "false",   # SSL verify=False 폴백 허용 여부 (기본: 금지)
@@ -52,7 +50,6 @@ class ConfigManager:
         self.config: dict[str, str] = dict(DEFAULT_CONFIG)
         self._ensure_dir()
         self.load()
-        self.apply_tesseract_path()
 
     # ------------------------------------------------------------------
     # 파일 I/O
@@ -173,7 +170,7 @@ class ConfigManager:
         return f"{base}/openapi/agent-chat/v1/agent-messages"
 
     # ------------------------------------------------------------------
-    # Tesseract
+    # PaddleOCR 모델
     # ------------------------------------------------------------------
     def paddleocr_model_root(self):
         """번들/캐시된 PaddleOCR 모델 루트. _MEIPASS→exe폴더→vendor→~/.paddlex 순."""
@@ -192,6 +189,3 @@ class ConfigManager:
             if c.is_dir():
                 return c
         return None
-
-    def apply_tesseract_path(self) -> None:
-        return  # no-op 셰임(호출부 보호, 이후 제거)

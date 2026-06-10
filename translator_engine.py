@@ -13,7 +13,6 @@ from constants import (
     DEFAULT_TGT,
     DEFAULT_TIMEOUT_SECONDS,
     MAX_RETRY_ATTEMPTS,
-    OCR_LANG_MAP,
     RETRY_BACKOFF_BASE,
     SOURCE_LANGUAGES,
     TARGET_LANGUAGES,
@@ -115,13 +114,6 @@ class LLMTranslator:
             self._check_cancel()
             translated_chunks.append(self._call_api_with_retry(chunk))
         return "\n\n".join(translated_chunks)
-
-    def get_ocr_lang(self) -> str:
-        """원본 언어 OCR 코드. 비영어 문서에는 영어를 추가하여 혼합 문서 인식률 향상 (v2 동작)."""
-        lang = OCR_LANG_MAP.get(self.source_lang, "eng")
-        if lang != "eng":
-            return f"{lang}+eng"
-        return lang
 
     # ------------------------------------------------------------------
     # 청크 분할

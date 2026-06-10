@@ -1,0 +1,25 @@
+# LLM Translator — 런타임 의존성
+# Python 3.13 기준. 사내 오프라인망 배포 시 동일 버전으로 휠을 미리 받아 두세요.
+
+# --- 코어 ---
+requests==2.33.1
+python-docx==1.2.0
+openpyxl==3.1.5
+python-pptx==1.0.2
+pypdf==6.10.2
+PyMuPDF==1.27.2.3
+pillow==12.2.0
+
+# --- OCR: PaddleOCR (Tesseract 완전 대체, 표 구조 인식) ---
+# paddlex[ocr] 가 table_recognition_v2 파이프라인 의존성(premailer/tokenizers/
+# ftfy/lxml/scikit-learn/shapely/pyclipper 등)을 함께 설치한다.
+paddlepaddle==3.3.1
+paddleocr==3.6.0
+paddlex[ocr]==3.6.1
+beautifulsoup4==4.15.0
+
+# --- 선택: 드래그앤드롭 (없으면 자동 비활성화) ---
+tkinterdnd2==0.4.3
+
+# --- 개발/테스트 ---
+pytest==9.0.3

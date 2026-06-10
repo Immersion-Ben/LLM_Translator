@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 from typing import Optional
 
 from config_manager import CONFIG_FILE, ConfigManager
 from constants import UI_BASE_SCALE
-from dependencies import pytesseract
 from logging_config import logger
 from security import validate_agent_id, validate_email, validate_endpoint_url
 
@@ -170,14 +169,11 @@ class SettingsDialog:
         notebook.pack(fill="both", expand=True, pady=(0, 10))
 
         api_tab = ttk.Frame(notebook, padding=10)
-        ocr_tab = ttk.Frame(notebook, padding=10)
         adv_tab = ttk.Frame(notebook, padding=10)
         notebook.add(api_tab, text="🔑 API")
-        notebook.add(ocr_tab, text="🔍 OCR")
         notebook.add(adv_tab, text="⚙ 고급")
 
         self._build_api_tab(api_tab)
-        self._build_ocr_tab(ocr_tab)
         self._build_advanced_tab(adv_tab)
 
         # 하단 버튼
@@ -236,32 +232,6 @@ class SettingsDialog:
             text="💡 빠른번역 Agent ID는 선택입니다. 비워두면 심화번역 Agent ID로 자동 폴백됩니다.",
             font=self.fonts["hint"], foreground="#64748b",
         ).pack(anchor="w", pady=(8, 0))
-
-    # -- OCR tab ---------------------------------------------------------
-    def _build_ocr_tab(self, parent) -> None:
-        ttk.Label(parent, text="Tesseract OCR 설정 (이미지/PDF OCR용)",
-                  font=self.fonts["section"]).pack(anchor="w", pady=(0, 6))
-
-        ttk.Label(parent,
-                  text="Tesseract 실행 파일 경로 (예: C:\\Program Files\\Tesseract-OCR\\tesseract.exe)",
-                  font=self.fonts["hint"], foreground="#64748b").pack(anchor="w", pady=(0, 5))
-
-        row = ttk.Frame(parent)
-        row.pack(fill="x")
-        self.tess_var = tk.StringVar(value=self.config.get("tesseract_path"))
-        ttk.Entry(row, textvariable=self.tess_var, font=self.fonts["input"]).pack(
-            side="left", fill="x", expand=True)
-        ttk.Button(row, text="📂 찾기", command=self._browse_tesseract).pack(
-            side="left", padx=(5, 0))
-
-        if pytesseract is None:
-            ttk.Label(parent,
-                      text="⚠ pytesseract 패키지가 설치되지 않아 OCR 기능을 사용할 수 없습니다.",
-                      font=self.fonts["hint"], foreground="#ef4444").pack(anchor="w", pady=(8, 0))
-
-        ttk.Label(parent,
-                  text="💡 실행 파일과 동일 폴더의 Tesseract-OCR/tesseract.exe 가 있으면 자동 감지됩니다.",
-                  font=self.fonts["hint"], foreground="#64748b").pack(anchor="w", pady=(10, 0))
 
     # -- Advanced tab ----------------------------------------------------
     def _build_advanced_tab(self, parent) -> None:
@@ -341,14 +311,6 @@ class SettingsDialog:
     # ------------------------------------------------------------------
     # Handlers
     # ------------------------------------------------------------------
-    def _browse_tesseract(self) -> None:
-        path = filedialog.askopenfilename(
-            title="Tesseract 실행 파일 선택",
-            filetypes=[("실행 파일", "*.exe"), ("모든 파일", "*.*")],
-        )
-        if path:
-            self.tess_var.set(path)
-
     def _save(self) -> None:
         # 필수 입력 (agent_id_fast는 선택)
         required = {
@@ -419,7 +381,6 @@ class SettingsDialog:
         # 저장
         for key, var in self._entries.items():
             self.config.set(key, var.get().strip())
-        self.config.set("tesseract_path", self.tess_var.get().strip())
         self.config.set("max_chunk_chars", chunk_val)
         self.config.set("timeout_seconds", timeout_val)
         self.config.set("allow_insecure_ssl", "true" if self.allow_insecure_var.get() else "false")
@@ -428,7 +389,6 @@ class SettingsDialog:
         self.config.set("auto_open_result", "true" if self.auto_open_var.get() else "false")
 
         self.config.save()
-        self.config.apply_tesseract_path()
         self.result = True
         self.dialog.destroy()
 

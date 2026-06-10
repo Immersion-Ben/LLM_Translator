@@ -5,6 +5,9 @@ __pycache__/
 *.pyc
 .paddlex/
 *.json.tmp
+*.zip
+.pytest_cache/
+.claude/
 
 # 내부 보안검토 보고서 / 테스트 문서 (공개 저장소 제외)
 *.XLSX

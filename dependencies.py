@@ -44,7 +44,6 @@ try:
     PADDLE_AVAILABLE = _ilu.find_spec("paddle") is not None and _ilu.find_spec("paddleocr") is not None
 except (ImportError, ValueError):
     PADDLE_AVAILABLE = False
-pytesseract = None  # 잔존 참조 안전 처리(이후 제거)
 
 try:
     from openpyxl import load_workbook
