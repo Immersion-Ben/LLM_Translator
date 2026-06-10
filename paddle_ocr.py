@@ -121,3 +121,41 @@ class PaddleTableOCR:
             if ocr:
                 page.text_blocks.extend([s for s in (ocr.get("rec_texts") or []) if s and s.strip()])
         return page
+
+
+def run_selftest(out_path: Path) -> bool:
+    """합성 표 1장을 인식해 OCR 스택(모델 번들·오프라인 해석 포함)을 자가진단한다.
+
+    GUI 없이 배포본 검증용 — frozen 에서는 `python.exe --selftest-ocr`.
+    결과를 out_path 에 기록하고 성공 여부를 반환한다."""
+    import tempfile
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        rows = [["Item", "Qty"], ["Apple", "10"], ["Banana", "24"]]
+        cw, ch = 180, 56
+        img = Image.new("RGB", (cw * 2 + 2, ch * 3 + 2), "white")
+        d = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 22)
+        except OSError:
+            font = ImageFont.load_default()
+        for r in range(4):
+            d.line([(0, r * ch), (cw * 2, r * ch)], fill="black", width=2)
+        for c in range(3):
+            d.line([(c * cw, 0), (c * cw, ch * 3)], fill="black", width=2)
+        for r, row in enumerate(rows):
+            for c, v in enumerate(row):
+                d.text((c * cw + 16, r * ch + 16), v, fill="black", font=font)
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "selftest.png"
+            img.save(str(p))
+            page = PaddleTableOCR().recognize(str(p))
+        ok = bool(page.table_htmls and "<table" in page.table_htmls[0].lower())
+        detail = "OK" if ok else "FAIL: table not detected"
+    except Exception as e:  # noqa: BLE001 — 진단 결과로 남기는 것이 목적
+        ok, detail = False, f"FAIL: {type(e).__name__}: {e}"
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(detail, encoding="utf-8")
+    logger.info("PADDLE selftest: %s", detail)
+    return ok

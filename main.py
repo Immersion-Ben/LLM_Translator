@@ -12,6 +12,15 @@ from runtime_setup import setup_runtime_environment
 def main() -> int:
     setup_runtime_environment()
 
+    if "--selftest-ocr" in sys.argv:
+        # GUI 없이 OCR 스택 자가진단 (배포본·오프라인망 검증용)
+        from pathlib import Path
+        from paddle_ocr import run_selftest
+        out = Path.home() / ".llm_translator" / "selftest_ocr.txt"
+        ok = run_selftest(out)
+        print(("✅ OK" if ok else "❌ FAIL") + f" — {out}")
+        return 0 if ok else 1
+
     error_code: str | None = None
     error_type: str = ""
 

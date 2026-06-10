@@ -25,6 +25,14 @@ def test_ascii_safe_dir_keeps_ascii_path(tmp_path):
 
 
 @pytest.mark.skipif(not PADDLE_AVAILABLE, reason="paddleocr not installed")
+def test_run_selftest_writes_ok(tmp_path):
+    from paddle_ocr import run_selftest
+    out = tmp_path / "selftest_ocr.txt"
+    assert run_selftest(out) is True
+    assert out.read_text(encoding="utf-8").startswith("OK")
+
+
+@pytest.mark.skipif(not PADDLE_AVAILABLE, reason="paddleocr not installed")
 def test_recognize_synthetic_table(tmp_path):
     from PIL import Image, ImageDraw, ImageFont
     from paddle_ocr import PaddleTableOCR
