@@ -5,7 +5,8 @@
 
 ## ✅ 완료 (커밋·푸시됨)
 
-원래 구현 계획: `docs/superpowers/plans/2026-06-09-paddleocr-table-recognition.md` (Task 0~14)
+원래 구현 계획(Task 0~14)은 완료되어 삭제됨 — 필요 시 git 히스토리에서
+`docs/superpowers/plans/2026-06-09-paddleocr-table-recognition.md` 복구 가능.
 
 - **Task 0~11** (이전 세션): table_grid / paddle_ocr / ocr_store / ocr_document /
   page_pipeline / job_store / job_manager 구현 + 단위 테스트. 모두 통과.

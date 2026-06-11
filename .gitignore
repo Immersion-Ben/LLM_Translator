@@ -14,3 +14,7 @@ __pycache__/
 *.PDF
 Scanned Table.pdf
 *.spec
+
+# 로컬 테스트 산출물
+OCR결과/
+LLMTranslator_v*_full/
