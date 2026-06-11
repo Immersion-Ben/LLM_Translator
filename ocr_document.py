@@ -21,11 +21,13 @@ def iter_pages(
     filepath: str,
     ocr_engine,                       # paddle_ocr.PaddleTableOCR
     pages_dir: Path,                  # 페이지 이미지 저장 폴더(OCR결과/<doc>_pages)
-    pdf_text_extractor=None,          # Callable[[str], list[str]] | None (텍스트레이어)
     dpi: int = 200,
     should_cancel: Optional[Callable[[], bool]] = None,
 ) -> Iterator[PageResult]:
     """페이지를 하나씩 OCR 하여 지연 yield 한다(단일 스레드에서만 소비할 것).
+
+    텍스트 레이어가 있는 디지털 PDF 도 항상 강제 OCR 한다 — 텍스트 레이어를
+    그대로 쓰면 표가 평문으로 뭉개져 표 보존 목적이 무력화되기 때문.
 
     OCR 은 단일 PaddleOCR 파이프라인을 쓰므로 이 제너레이터를 여러 스레드에서
     동시에 당기면 안 된다(page_pipeline 의 단일 생산자 스레드가 소비)."""
@@ -40,16 +42,11 @@ def iter_pages(
 
     # PDF
     import fitz
-    text_layer = pdf_text_extractor(filepath) if pdf_text_extractor else None
     doc = fitz.open(filepath)
     try:
         for i in range(len(doc)):
             if should_cancel and should_cancel():
                 break
-            txt = (text_layer[i] if text_layer and i < len(text_layer) else "") or ""
-            if len(txt.strip()) >= 10:
-                yield PageResult(i, "text", [], [txt], image=None)
-                continue
             pix = doc[i].get_pixmap(matrix=fitz.Matrix(dpi / 72, dpi / 72))
             img_name = f"page_{i+1}.png"
             pix.save(str(pages_dir / img_name))
@@ -63,14 +60,13 @@ def ocr_document(
     filepath: str,
     ocr_engine,
     pages_dir: Path,
-    pdf_text_extractor=None,
     dpi: int = 200,
     on_page: Optional[PageCallback] = None,
     should_cancel: Optional[Callable[[], bool]] = None,
 ) -> OcrResult:
     """iter_pages 를 모아 OcrResult 로 반환(ocr_only 모드)."""
     results: list[PageResult] = []
-    for pr in iter_pages(filepath, ocr_engine, pages_dir, pdf_text_extractor, dpi, should_cancel):
+    for pr in iter_pages(filepath, ocr_engine, pages_dir, dpi, should_cancel):
         results.append(pr)
         if on_page:
             on_page(pr)

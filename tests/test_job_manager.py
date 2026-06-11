@@ -44,6 +44,44 @@ def test_ocr_only_then_translate(tmp_path):
     mgr.stop()
 
 
+def test_text_layer_pdf_is_force_ocred(tmp_path):
+    """텍스트 레이어가 있는 디지털 PDF 도 모든 페이지가 PaddleOCR 를 거쳐야 한다.
+
+    회귀 방지: 과거 iter_pages 가 텍스트 레이어 10자 이상이면 OCR 을 건너뛰어
+    표 보존이 무력화됐다(잔여작업 0). OCR 경로에서는 항상 강제 OCR."""
+    import fitz
+    from ocr_store import load_ocr_result
+
+    pdf = tmp_path / "digital.pdf"
+    d = fitz.open()
+    for i in range(2):
+        pg = d.new_page()
+        pg.insert_text((72, 72), f"This is a digital text layer on page {i} with a table.")
+    d.save(str(pdf)); d.close()
+
+    class CountingOCR(FakeOCR):
+        def __init__(self):
+            self.calls = 0
+
+        def recognize(self, image_path):
+            self.calls += 1
+            return super().recognize(image_path)
+
+    ocr = CountingOCR()
+    store = JobStore(tmp_path / "jobs.json")
+    mgr = JobManager(store, translator=FakeTranslator(), ocr_engine=ocr)
+    mgr.start()
+    jid = mgr.submit(str(pdf), mode=MODE_OCR_ONLY)
+    _wait(lambda: store.get(jid).status in (JobStatus.OCR_DONE, JobStatus.FAILED))
+    mgr.stop()
+
+    assert store.get(jid).status == JobStatus.OCR_DONE, store.get(jid).error
+    assert ocr.calls == 2  # 두 페이지 모두 OCR 실행
+    loaded = load_ocr_result(store.get(jid).ocr_json)
+    assert [p.kind for p in loaded.pages] == ["ocr", "ocr"]
+    assert all(p.table_htmls for p in loaded.pages)
+
+
 def test_full_mode_reaches_done(tmp_path):
     store, mgr, path = _mgr(tmp_path)
     mgr.start()

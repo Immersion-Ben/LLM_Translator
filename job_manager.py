@@ -21,19 +21,6 @@ from ocr_store import save_ocr_result, load_ocr_result, OcrResult
 from page_pipeline import run_page_pipeline
 
 
-def _pdf_text(filepath: str):
-    """PDF 텍스트레이어 추출(없으면 None). PyMuPDF 사용."""
-    try:
-        import fitz
-        doc = fitz.open(filepath)
-        try:
-            return [doc[i].get_text() or "" for i in range(len(doc))]
-        finally:
-            doc.close()
-    except Exception:  # noqa: BLE001
-        return None
-
-
 def _ocr_dir(source: str) -> Path:
     src = Path(source)
     base = src.parent.parent if src.parent.name == INPUT_DIR_NAME else src.parent
@@ -119,8 +106,7 @@ class JobManager:
                 if j.mode == MODE_FULL:
                     self._run_full(jid, src, stem, pages_dir)
                 else:  # OCR_ONLY
-                    produced = ocr_document(src, self.ocr_engine, pages_dir,
-                                            pdf_text_extractor=_pdf_text)
+                    produced = ocr_document(src, self.ocr_engine, pages_dir)
                     ocr_json = save_ocr_result(_ocr_dir(src), stem, produced)
                     self.store.update(jid, status=JobStatus.OCR_DONE, ocr_json=str(ocr_json))
                     self._notify(jid)
@@ -136,7 +122,7 @@ class JobManager:
         doc = Document()
         cell_cache: dict = {}
         collected: list = []
-        gen = iter_pages(src, self.ocr_engine, pages_dir, pdf_text_extractor=_pdf_text)
+        gen = iter_pages(src, self.ocr_engine, pages_dir)
 
         def produce(i):
             pr = next(gen)
