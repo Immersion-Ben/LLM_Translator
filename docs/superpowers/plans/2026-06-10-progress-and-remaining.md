@@ -60,7 +60,24 @@
 추가: `--selftest-ocr` 자가진단 모드 신설(결과: 종료코드 + ~/.llm_translator/
 selftest_ocr.txt), 버전 3.1.0-alpha.
 
-## 🐞 잔여작업 0 — 텍스트 레이어 PDF 가 표 보존 OCR 을 우회하는 문제 (최우선)
+## ✅ 잔여작업 0 완료 (2026-06-11, v3.1.1-alpha)
+
+**수정**: `iter_pages` 의 text-layer 분기 + `pdf_text_extractor` 파라미터 +
+`job_manager._pdf_text` 제거 → OCR 경로(OCR만/OCR+번역)는 항상 강제 OCR.
+`kind:"text"` 소비 경로(file_translator.render_page_to_doc / ocr_store.kind)는
+기존 ocr.json 호환 위해 유지. TDD: `test_text_layer_pdf_is_force_ocred`
+(job_manager 레벨, RED 에서 OCR 0회 호출 재현) → 18 passed.
+
+**검증** (2026-06-11):
+- 합성 디지털 표 PDF(텍스트 레이어 有) → JobManager OCR_ONLY → kind="ocr",
+  표 HTML 셀 내용 정확 (소스 레벨, 실모델).
+- **Test.pdf(번체 중국어, 텍스트 레이어 有)** → 강제 OCR → 표 1개·셀 63개,
+  중국어 셀/본문 60블록 정상 추출. (일부 간체 인식·행 병합은 모델 특성, 육안검증 대상)
+- 재빌드: `dist\python\` + `LLMTranslator_v3.1.1-alpha_full.zip` (1275.8MB).
+- 차단망 frozen selftest: 죽은 프록시 + HF_HUB_OFFLINE 에서 `python.exe
+  --selftest-ocr` → ExitCode 0 / OK, 모델 9개 전부 번들 내부 해석.
+
+## ~~🐞 잔여작업 0 — 텍스트 레이어 PDF 가 표 보존 OCR 을 우회하는 문제~~ (완료, 위 참조)
 
 **증상** (2026-06-10 저녁 발견): "OCR만" 으로 디지털 PDF(test.pdf, 표 포함)를 돌리면
 작업이 즉시 OCR_DONE 으로 끝나고, 산출 JSON 에 표가 평문으로 뭉개진
