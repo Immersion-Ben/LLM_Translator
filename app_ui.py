@@ -478,6 +478,7 @@ class TranslatorApp:
             SOURCE_LANGUAGES.get(init_src, "Vietnamese"),
             TARGET_LANGUAGES.get(init_tgt, "Korean"),
         )
+        self._ocr_engine.set_language(SOURCE_LANGUAGES.get(init_src, "Vietnamese"))
 
     # -- Mode Bar (빠른번역 / 심화번역) ----------------------------------
     def _build_mode_bar(self) -> None:
@@ -999,6 +1000,8 @@ class TranslatorApp:
             self.jobs.ft = FileTranslator(self.translator)
             self._ocr_engine = PaddleTableOCR(model_root=self.config.paddleocr_model_root())
             self.jobs.ocr_engine = self._ocr_engine
+            # 엔진 재생성 후 현재 선택 언어 재반영 (없으면 기본값으로 리셋됨)
+            self._on_lang_changed()
             # 테마/폰트 재적용이 필요하면 안내 (재시작 권장)
             new_theme = self.config.get("ui_theme")
             new_scale = self.config.get_float("font_scale", 1.0)
@@ -1034,6 +1037,7 @@ class TranslatorApp:
             SOURCE_LANGUAGES.get(src, "Vietnamese"),
             TARGET_LANGUAGES.get(tgt, "Korean"),
         )
+        self._ocr_engine.set_language(SOURCE_LANGUAGES.get(src, "Vietnamese"))
         self.src_label.set(src)
         self.tgt_label.set(tgt)
         self._log(f"언어: {src} → {tgt}", "info")

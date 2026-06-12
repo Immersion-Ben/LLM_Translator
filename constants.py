@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 APP_NAME = "LLM Translator"
-APP_VERSION = "3.1.1-alpha"
+APP_VERSION = "3.2.0-alpha"
 APP_TITLE = f"{APP_NAME}  |  Samsung C&T"
 
 # 한국어/영어 최상단 + 나머지 가나다 순. 두 dict 동일 순서 유지.
@@ -73,14 +73,47 @@ MODE_OCR_ONLY = "ocr_only"
 
 # PaddleOCR 오프라인 모델
 PADDLE_VENDOR_DIRNAME = "paddleocr-models"
+# det/rec 은 경량(mobile) 모델 사용 — CPU 노트북에서 server 급 det/rec 은
+# 페이지당 ~2분(실문서 ~14분)으로 비실용적, mobile 교체로 ~3.4배 단축
+# (bench_ocr.py 실측 117s→34.5s, 동일 테스트 페이지에서 인식 결과 손실 없음).
+# layout 은 L 유지: 페이지당 +3.5s 뿐인데 S 는 작은 표를 놓침(selftest 실패).
+# 표 구조/셀 모델은 표 영역에만 실행되므로 정확도 우선으로 유지.
 PADDLE_MODELS: dict[str, str] = {
     "layout_detection_model_name": "PP-DocLayout-L",
     "table_classification_model_name": "PP-LCNet_x1_0_table_cls",
     "wired_table_structure_recognition_model_name": "SLANeXt_wired",
     "wired_table_cells_detection_model_name": "RT-DETR-L_wired_table_cell_det",
     "doc_orientation_classify_model_name": "PP-LCNet_x1_0_doc_ori",
-    "text_detection_model_name": "PP-OCRv4_server_det",
-    "text_recognition_model_name": "PP-OCRv4_server_rec_doc",
+    "text_detection_model_name": "PP-OCRv5_mobile_det",
+    "text_recognition_model_name": "PP-OCRv5_mobile_rec",
+}
+
+# 원본 언어(영문명, SOURCE_LANGUAGES 의 값) → 텍스트 인식(rec) 모델.
+# 검출(det)/레이아웃은 문자종 무관이라 공용, rec 만 문자권별 모델이 필요하다.
+# 라틴 문자권 11개 언어는 latin 통합 모델 하나로 커버. 미등재 언어는
+# PADDLE_MODELS 의 기본 rec(중/영/일)으로 동작한다.
+_REC_LATIN = "latin_PP-OCRv5_mobile_rec"
+PADDLE_REC_BY_LANG: dict[str, str] = {
+    "Korean": "korean_PP-OCRv5_mobile_rec",
+    "English": "en_PP-OCRv5_mobile_rec",
+    "Dutch": _REC_LATIN,
+    "German": _REC_LATIN,
+    "Malay": _REC_LATIN,
+    "Vietnamese": _REC_LATIN,
+    "Spanish": _REC_LATIN,
+    "Italian": _REC_LATIN,
+    "Indonesian": _REC_LATIN,
+    "Turkish": _REC_LATIN,
+    "Portuguese": _REC_LATIN,
+    "Polish": _REC_LATIN,
+    "French": _REC_LATIN,
+    "Russian": "cyrillic_PP-OCRv5_mobile_rec",
+    "Arabic": "arabic_PP-OCRv5_mobile_rec",
+    "Japanese": "PP-OCRv5_mobile_rec",
+    "Simplified Chinese": "PP-OCRv5_mobile_rec",
+    "Traditional Chinese": "PP-OCRv5_mobile_rec",
+    "Thai": "th_PP-OCRv5_mobile_rec",
+    "Hindi": "devanagari_PP-OCRv5_mobile_rec",
 }
 
 DEFAULT_SRC = "베트남어"

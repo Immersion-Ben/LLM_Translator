@@ -1,4 +1,8 @@
-"""PaddleOCR TableRecognitionPipelineV2 래퍼 (wired/server, mkldnn off, 오프라인)."""
+"""PaddleOCR TableRecognitionPipelineV2 래퍼 (wired/mobile, mkldnn off, 오프라인).
+
+mkldnn(oneDNN) 은 paddlepaddle 3.3.1 PIR 실행기 버그로 켜면 즉시 크래시한다
+(NotImplementedError: ConvertPirAttribute2RuntimeAttribute, onednn_instruction.cc).
+FLAGS_enable_pir_api=0 우회도 무효 — off 가 실측으로 확인된 필수값."""
 from __future__ import annotations
 
 import os
@@ -7,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from constants import PADDLE_MODELS, PADDLE_VENDOR_DIRNAME
+from constants import PADDLE_MODELS, PADDLE_REC_BY_LANG, PADDLE_VENDOR_DIRNAME
 from logging_config import logger
 
 
@@ -84,9 +88,24 @@ class PageOCR:
 
 
 class PaddleTableOCR:
-    def __init__(self, model_root: Optional[Path] = None) -> None:
+    def __init__(self, model_root: Optional[Path] = None,
+                 source_lang: Optional[str] = None) -> None:
         self._model_root = model_root
         self._pipe = None
+        self._rec_model = PADDLE_REC_BY_LANG.get(
+            source_lang or "", PADDLE_MODELS["text_recognition_model_name"])
+
+    def set_language(self, source_lang: str) -> None:
+        """원본 언어(영문명)에 맞는 rec 모델 선택 — 바뀌면 파이프라인을 지연 재생성.
+
+        translator.set_languages 와 같은 패턴: UI 가 언어 변경 시 호출한다.
+        진행 중인 recognize 는 기존 파이프라인 참조로 끝까지 수행된다."""
+        rec = PADDLE_REC_BY_LANG.get(
+            source_lang, PADDLE_MODELS["text_recognition_model_name"])
+        if rec != self._rec_model:
+            self._rec_model = rec
+            self._pipe = None
+            logger.info("PADDLE: rec model -> %s (%s)", rec, source_lang)
 
     def _kwargs(self) -> dict:
         kw = {
@@ -95,9 +114,11 @@ class PaddleTableOCR:
             "use_layout_detection": True,
             "enable_mkldnn": False,  # 필수
         }
-        kw.update(PADDLE_MODELS)
+        models = dict(PADDLE_MODELS)
+        models["text_recognition_model_name"] = self._rec_model
+        kw.update(models)
         if self._model_root is not None:
-            for nk, mn in PADDLE_MODELS.items():
+            for nk, mn in models.items():
                 local = self._model_root / mn
                 if local.is_dir():
                     kw[nk.replace("_model_name", "_model_dir")] = str(local)
@@ -107,7 +128,7 @@ class PaddleTableOCR:
         if self._pipe is None:
             from paddleocr import TableRecognitionPipelineV2
             self._pipe = TableRecognitionPipelineV2(**self._kwargs())
-            logger.info("PADDLE: pipeline ready (wired/server, mkldnn off)")
+            logger.info("PADDLE: pipeline ready (wired/mobile, mkldnn off)")
         return self._pipe
 
     def recognize(self, image_path: str) -> PageOCR:
