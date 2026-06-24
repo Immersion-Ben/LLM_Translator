@@ -19,6 +19,7 @@ from job_store import Job, JobStore
 from ocr_document import ocr_document, iter_pages, count_pages
 from ocr_store import save_ocr_result, load_ocr_result, OcrResult
 from page_pipeline import run_page_pipeline
+from security import validate_input_path
 
 
 def _ocr_dir(source: str) -> Path:
@@ -70,6 +71,9 @@ class JobManager:
         self._trans_q.put(None)
 
     def submit(self, source: str, mode: str = MODE_FULL) -> str:
+        # CWE-22: OCR/PDF·이미지 경로도 진입점에서 검증한다(translate_file 와 대칭).
+        # NUL/제어문자·경로순회·허용 외 확장자·미존재 입력을 큐 적재 전에 차단.
+        source = str(validate_input_path(source))
         jid = uuid.uuid4().hex[:12]
         self.store.add(Job(id=jid, source=source, mode=mode, status=JobStatus.QUEUED))
         self._notify(jid)

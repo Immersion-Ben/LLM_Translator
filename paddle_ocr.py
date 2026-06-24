@@ -87,6 +87,119 @@ class PageOCR:
     text_blocks: list[str] = field(default_factory=list)
 
 
+def _to_xyxy(box) -> Optional[tuple[float, float, float, float]]:
+    """rec_boxes 의 [x0,y0,x1,y1] 또는 rec_polys 의 4점 다각형을
+    축정렬 bbox (x0,y0,x1,y1) 로 정규화. numpy 배열/스칼라도 허용."""
+    if box is None:
+        return None
+    try:
+        first = box[0]
+    except (TypeError, IndexError, KeyError):
+        return None
+    # 다각형: 각 원소가 [x, y] 점(길이 보유) → 꼭짓점들의 min/max
+    if hasattr(first, "__len__"):
+        try:
+            xs = [float(p[0]) for p in box]
+            ys = [float(p[1]) for p in box]
+        except (TypeError, ValueError, IndexError):
+            return None
+        return (min(xs), min(ys), max(xs), max(ys))
+    # 축정렬 bbox [x0, y0, x1, y1]
+    try:
+        x0, y0, x1, y1 = float(box[0]), float(box[1]), float(box[2]), float(box[3])
+    except (TypeError, ValueError, IndexError):
+        return None
+    return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
+
+
+def _extract_boxes(ocr: dict, n: int) -> list:
+    """overall_ocr_res 에서 텍스트와 1:1 대응하는 bbox 목록을 뽑는다.
+    좌표 키가 없거나 개수가 안 맞으면 [None]*n (→ 원래 순서 유지)."""
+    for key in ("rec_boxes", "rec_polys", "dt_polys"):
+        raw = ocr.get(key)
+        if raw is None:
+            continue
+        try:
+            seq = list(raw)
+        except TypeError:
+            continue
+        if len(seq) != n:
+            continue
+        boxes = [_to_xyxy(b) for b in seq]
+        if any(b is not None for b in boxes):
+            return boxes
+    return [None] * n
+
+
+def _region_from_cell_boxes(cell_boxes) -> Optional[tuple[float, float, float, float]]:
+    """표 셀 박스 목록의 합집합을 표 영역 bbox 로 계산. 비면 None."""
+    xys = [xy for b in (cell_boxes or []) if (xy := _to_xyxy(b)) is not None]
+    if not xys:
+        return None
+    return (min(x[0] for x in xys), min(x[1] for x in xys),
+            max(x[2] for x in xys), max(x[3] for x in xys))
+
+
+def _drop_inside(texts: list[str], boxes: list, regions: list):
+    """표 영역(regions) 안에 중심이 들어간 텍스트를 본문에서 제거한다.
+
+    표 영역 텍스트는 이미 table_htmls(docx 표)로 렌더되므로 본문에 또 넣으면
+    중복되고, 다열 표라면 본문 순서까지 뒤섞는다. 영역 밖 텍스트만 남긴다.
+    좌표가 없는(또는 regions 가 빈) 텍스트는 안전하게 유지."""
+    if not regions:
+        return list(texts), list(boxes)
+    kept_t, kept_b = [], []
+    for t, b in zip(texts, boxes):
+        xy = _to_xyxy(b)
+        if xy is not None:
+            cx, cy = (xy[0] + xy[2]) / 2, (xy[1] + xy[3]) / 2
+            if any(rx0 <= cx <= rx1 and ry0 <= cy <= ry1
+                   for (rx0, ry0, rx1, ry1) in regions):
+                continue
+        kept_t.append(t)
+        kept_b.append(b)
+    return kept_t, kept_b
+
+
+def _reading_order(texts: list[str], boxes: list) -> list[str]:
+    """좌표 기반 행 우선(row-major) 읽기 순서로 텍스트를 재정렬한다.
+
+    TableRecognitionPipelineV2 의 overall_ocr_res 는 문서 단위 읽기순서 복원이
+    없어, 무테두리 2단 키-값 표에서 라벨열과 값열이 검출 원시 순서대로 뒤섞여
+    들어온다. 같은 가로 행 밴드(세로 겹침)에 있는 박스들을 한 줄로 묶어 좌→우로
+    읽고, 줄은 위→아래로 이어 순서를 복원한다. 좌표가 없으면 원래 순서를 유지."""
+    items = [(t, xy) for t, b in zip(texts, boxes or [])
+             if t and t.strip() and (xy := _to_xyxy(b)) is not None]
+    if not items:
+        # 좌표 정보가 없으면 안전하게 원래 순서(빈 텍스트 제외) 유지
+        return [t for t in texts if t and t.strip()]
+
+    items.sort(key=lambda it: (it[1][1], it[1][0]))  # top, then left
+    lines: list[list[tuple]] = []
+    bands: list[tuple[float, float]] = []  # 각 줄의 (top, bottom)
+    for t, b in items:
+        y0, y1 = b[1], b[3]
+        placed = False
+        for i in range(len(lines)):
+            lt, lb = bands[i]
+            overlap = min(y1, lb) - max(y0, lt)
+            denom = min(y1 - y0, lb - lt)
+            if denom > 0 and overlap > 0.5 * denom:
+                lines[i].append((t, b))
+                bands[i] = (min(lt, y0), max(lb, y1))
+                placed = True
+                break
+        if not placed:
+            lines.append([(t, b)])
+            bands.append((y0, y1))
+
+    out: list[str] = []
+    for i in sorted(range(len(lines)), key=lambda i: bands[i][0]):
+        for t, _ in sorted(lines[i], key=lambda it: it[1][0]):
+            out.append(t)
+    return out
+
+
 class PaddleTableOCR:
     def __init__(self, model_root: Optional[Path] = None,
                  source_lang: Optional[str] = None) -> None:
@@ -134,13 +247,23 @@ class PaddleTableOCR:
     def recognize(self, image_path: str) -> PageOCR:
         page = PageOCR()
         for res in self._ensure().predict(str(image_path)):
+            table_regions: list = []
             for t in (res.get("table_res_list") or []):
                 html = t.get("pred_html")
                 if html:
                     page.table_htmls.append(html)
+                    # 표로 렌더된 영역은 본문에서 제외하기 위해 영역 bbox 를 모은다.
+                    region = _region_from_cell_boxes(t.get("cell_box_list"))
+                    if region is not None:
+                        table_regions.append(region)
             ocr = res.get("overall_ocr_res")
             if ocr:
-                page.text_blocks.extend([s for s in (ocr.get("rec_texts") or []) if s and s.strip()])
+                texts = list(ocr.get("rec_texts") or [])
+                boxes = _extract_boxes(ocr, len(texts))
+                # 1) 표 영역 텍스트 제거(table_htmls 와 중복·본문 순서 교란 방지)
+                texts, boxes = _drop_inside(texts, boxes, table_regions)
+                # 2) 남은 본문을 좌표 기반 행 우선 순서로 재정렬(무테두리 다열 본문 대비)
+                page.text_blocks.extend(_reading_order(texts, boxes))
         return page
 
 

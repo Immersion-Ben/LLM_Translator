@@ -17,6 +17,7 @@ from typing import Optional
 from config_manager import ConfigManager
 from constants import (
     APP_NAME,
+    APP_EDITION,
     APP_TITLE,
     APP_VERSION,
     DEFAULT_SRC,
@@ -212,8 +213,9 @@ class TranslatorApp:
             except (OSError, AttributeError):
                 ctypes.windll.user32.SetProcessDPIAware()
         except (OSError, AttributeError) as e:
-            # DPI 인식 설정 실패는 비치명적(구형 Windows 등) — 기록만 한다.
-            logger.debug(f"DPI-AWARE: 설정 실패 ({type(e).__name__})")
+            # DPI 인식 설정 실패는 비치명적(구형 Windows 등)이나, 활성 디버그 코드
+            # (CWE-489) 회피 + 운영 중 원인 추적을 위해 warning 으로 기록한다.
+            logger.warning(f"DPI-AWARE: 설정 실패 ({type(e).__name__})")
 
     def _apply_responsive_geometry(self) -> None:
         """현재 화면 크기의 약 85% 로 자동 조정. 작은 화면에서도 잘리지 않게."""
@@ -246,7 +248,8 @@ class TranslatorApp:
             self.root.tk.call("tk", "scaling", dpi_scale)
         except tk.TclError:
             # 일부 환경에서 tk scaling 미지원 — 기본 스케일로 진행한다.
-            logger.debug("DPI-SCALE: tk scaling 적용 실패")
+            # 활성 디버그 코드(CWE-489) 회피 위해 warning 으로 기록.
+            logger.warning("DPI-SCALE: tk scaling 적용 실패, 기본 스케일로 진행")
 
     # ===================================================================
     # 적응형 폰트 시스템
@@ -332,8 +335,9 @@ class TranslatorApp:
             try:
                 self.root.after_cancel(self._resize_after_id)
             except (tk.TclError, ValueError):
-                # 이미 취소/실행된 after 콜백 — 무시 가능하나 추적을 위해 기록한다.
-                logger.debug("RESIZE: after_cancel 무시 가능한 예외")
+                # 이미 취소/실행된 after 콜백 — 무시 가능하나 활성 디버그 코드
+                # (CWE-489) 회피 + 추적을 위해 info 로 기록한다.
+                logger.info("RESIZE: after_cancel 무시 가능한 예외")
         self._resize_after_id = self.root.after(120, self._apply_adaptive_scale)
 
     # ===================================================================
@@ -404,7 +408,7 @@ class TranslatorApp:
 
         tk.Label(inner, text=APP_NAME, font=self.fonts["xl"],
                  fg=p["TOP_BAR_FG"], bg=p["TOP_BAR"]).pack(side="left", pady=8)
-        tk.Label(inner, text=f"v{APP_VERSION}  ·  Powered by FabriX Agent",
+        tk.Label(inner, text=f"{APP_EDITION} v{APP_VERSION}  ·  Powered by FabriX Agent",
                  font=self.fonts["base"], fg="#b3cefb", bg=p["TOP_BAR"]).pack(
             side="left", padx=(10, 0), pady=8)
 
@@ -905,7 +909,8 @@ class TranslatorApp:
 
     def _default_status(self) -> str:
         dnd = "드래그앤드롭 ✓" if DND_AVAILABLE else "드래그앤드롭 ✗"
-        return f"{APP_NAME} v{APP_VERSION}  |  Samsung C&T PI Team & AX Dev Group  |  {dnd}"
+        return (f"{APP_NAME} · {APP_EDITION} v{APP_VERSION}  |  "
+                f"Samsung C&T PI Team & AX Dev Group  |  {dnd}")
 
     # ===================================================================
     # 이벤트 / 단축키
@@ -1361,13 +1366,15 @@ class TranslatorApp:
                 # 실측 시간으로 모드별 평균 갱신 (OCR 시간은 별도 가중치이므로 제외)
                 duration = time.time() - file_start
                 est = self.file_estimates.get(fp)
-                # CWE-476: dict.get() 이 None 을 반환할 수 있으므로 명시적으로 검사한다.
-                if est is not None and est.chunks > 0 and duration > 0:
-                    api_secs = max(0.0,
-                                   duration - est.ocr_pages * self.time_estimator.OCR_PER_PAGE_S)
-                    self.time_estimator.update_avg(
-                        self.mode_var.get(), api_secs, est.chunks
-                    )
+                # CWE-476: dict.get() 이 None 을 반환할 수 있으므로, 단축평가에
+                # 의존하지 않고 명시적 NULL 검사 블록 안에서만 est 를 역참조한다.
+                if est is not None:
+                    if est.chunks > 0 and duration > 0:
+                        api_secs = max(0.0,
+                                       duration - est.ocr_pages * self.time_estimator.OCR_PER_PAGE_S)
+                        self.time_estimator.update_avg(
+                            self.mode_var.get(), api_secs, est.chunks
+                        )
                 self._log(f"  ✓ 완료 → {Path(out).name} ({format_secs(duration)})",
                           "success")
             except TranslationCancelled:

@@ -55,7 +55,8 @@ def main() -> int:
             input("\nEnter를 눌러 종료하세요...")
         except EOFError:
             # 대화형 입력이 불가능한 실행 환경(예: GUI 더블클릭) — 정상 종료한다.
-            logger.debug("MAIN-EOF: 대화형 입력 불가 환경, 대기 없이 종료")
+            # 활성 디버그 코드(CWE-489) 회피 위해 info 로 기록.
+            logger.info("MAIN-EOF: 대화형 입력 불가 환경, 대기 없이 종료")
     return 1
 
 

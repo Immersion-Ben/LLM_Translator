@@ -1,4 +1,5 @@
 import time
+import pytest
 from job_store import JobStore
 from job_manager import JobManager
 from constants import JobStatus, MODE_OCR_ONLY, MODE_FULL
@@ -30,6 +31,22 @@ def _wait(cond, timeout=10):
             return
         time.sleep(0.05)
     raise AssertionError("timeout")
+
+
+def test_submit_rejects_invalid_path(tmp_path):
+    """CWE-22: OCR/PDF 경로도 진입점(submit)에서 검증해야 한다.
+    제어문자 포함·미존재·허용 외 확장자는 ValueError 로 거부."""
+    store, mgr, path = _mgr(tmp_path)
+    with pytest.raises(ValueError):
+        mgr.submit("does_not_exist_12345.png")          # 미존재
+    with pytest.raises(ValueError):
+        mgr.submit(str(tmp_path / "bad\nname.png"))      # 제어문자
+    evil = tmp_path / "note.exe"
+    evil.write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError):
+        mgr.submit(str(evil))                            # 허용 외 확장자
+    # 등록된 작업이 없어야 한다(거부된 입력이 큐/스토어에 들어가지 않음)
+    assert store.list() == []
 
 
 def test_ocr_only_then_translate(tmp_path):

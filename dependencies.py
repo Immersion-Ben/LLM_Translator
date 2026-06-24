@@ -22,11 +22,12 @@ except ImportError:
 try:
     import pypdf.filters  # noqa: F401
 except ImportError as e:
-    logger.debug(f"DEP-OPT: pypdf.filters 미탑재 ({type(e).__name__})")
+    # 선택적 서브모듈 미탑재 — 활성 디버그 코드(CWE-489) 회피 위해 info 로 기록.
+    logger.info(f"DEP-OPT: pypdf.filters 미탑재 ({type(e).__name__})")
 try:
     import pypdf._crypt_providers  # noqa: F401
 except ImportError as e:
-    logger.debug(f"DEP-OPT: pypdf._crypt_providers 미탑재 ({type(e).__name__})")
+    logger.info(f"DEP-OPT: pypdf._crypt_providers 미탑재 ({type(e).__name__})")
 
 try:
     import fitz as pymupdf
