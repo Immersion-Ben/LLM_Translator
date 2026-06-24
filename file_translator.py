@@ -209,6 +209,9 @@ class FileTranslator:
                     run.add_break()
 
     def _translate_pdf(self, filepath: str, cb: Optional[ProgressCallback]) -> str:
+        # CWE-22: 외부 입력 경로를 파일로 열기 직전에 함수 내에서 다시 검증/정규화하여
+        # 경로 조작(Path Traversal)을 차단한다. (검증 실패 시 ValueError 전파)
+        filepath = str(validate_input_path(filepath))
         output = self._output_path(filepath, ".docx")
 
         with open(filepath, "rb") as f:
@@ -378,7 +381,8 @@ class FileTranslator:
                 return pytesseract.image_to_string(img, lang=ocr_lang)
             except UnicodeDecodeError:
                 # 문자열 디코딩 실패 시 바이트 출력으로 재시도한다(아래 BYTES 경로).
-                logger.debug("OCR-DEC: 문자열 디코딩 실패, 바이트 출력으로 재시도")
+                # CWE-489: 배포본에 debug 레벨 진단 호출을 남기지 않도록 info 로 기록한다.
+                logger.info("OCR-DEC: 문자열 디코딩 실패, 바이트 출력으로 재시도")
 
             raw = pytesseract.image_to_string(
                 img, lang=ocr_lang, output_type=pytesseract.Output.BYTES

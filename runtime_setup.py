@@ -38,10 +38,21 @@ def _setup_ssl_cert_bundle() -> None:
 
 
 def _open_devnull(mode: str):
-    """os.devnull 스트림을 열고 종료 시 자동 해제되도록 등록한다."""
+    """os.devnull 스트림을 열고 종료 시 자동 해제되도록 등록한다.
+
+    스트림은 stdio 대체로 프로세스 종료 시까지 열려 있어야 하므로 with/즉시 close 가
+    불가능하다. CWE-404: 등록 단계에서 예외가 발생하면 finally 블록에서 스트림을 반드시
+    해제하여 자원 누수를 막고, 정상 등록 시에는 atexit 으로 종료 시점에 close 를 보장한다.
+    """
     stream = open(os.devnull, mode)
-    _DEVNULL_STREAMS.append(stream)
-    atexit.register(stream.close)
+    registered = False
+    try:
+        _DEVNULL_STREAMS.append(stream)
+        atexit.register(stream.close)
+        registered = True
+    finally:
+        if not registered:
+            stream.close()
     return stream
 
 

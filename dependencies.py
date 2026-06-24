@@ -18,15 +18,16 @@ except ImportError:
     PdfReader = None
 
 # PyInstaller에서 누락되는 pypdf 서브모듈 강제 import (PyInstaller 정적 탐지를 위해
-# 명시적 import 유지). 미탑재는 선택적 상황이므로 조용히 기록만 한다.
+# 명시적 import 유지). 미탑재는 선택적 상황이므로 info 로 기록만 한다.
+# CWE-489: 배포본에 debug 레벨 진단 호출을 남기지 않도록 info 로 기록한다.
 try:
     import pypdf.filters  # noqa: F401
 except ImportError as e:
-    logger.debug(f"DEP-OPT: pypdf.filters 미탑재 ({type(e).__name__})")
+    logger.info(f"DEP-OPT: pypdf.filters 미탑재 ({type(e).__name__})")
 try:
     import pypdf._crypt_providers  # noqa: F401
 except ImportError as e:
-    logger.debug(f"DEP-OPT: pypdf._crypt_providers 미탑재 ({type(e).__name__})")
+    logger.info(f"DEP-OPT: pypdf._crypt_providers 미탑재 ({type(e).__name__})")
 
 try:
     import fitz as pymupdf

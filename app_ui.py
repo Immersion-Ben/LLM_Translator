@@ -177,7 +177,8 @@ class TranslatorApp:
                 ctypes.windll.user32.SetProcessDPIAware()
         except (OSError, AttributeError) as e:
             # DPI 인식 설정 실패는 비치명적(구형 Windows 등) — 기록만 한다.
-            logger.debug(f"DPI-AWARE: 설정 실패 ({type(e).__name__})")
+            # CWE-489: 배포본에 debug 레벨 진단 호출을 남기지 않도록 warning 으로 기록한다.
+            logger.warning(f"DPI-AWARE: 설정 실패 ({type(e).__name__})")
 
     def _apply_responsive_geometry(self) -> None:
         """현재 화면 크기의 약 85% 로 자동 조정. 작은 화면에서도 잘리지 않게."""
@@ -210,7 +211,8 @@ class TranslatorApp:
             self.root.tk.call("tk", "scaling", dpi_scale)
         except tk.TclError:
             # 일부 환경에서 tk scaling 미지원 — 기본 스케일로 진행한다.
-            logger.debug("DPI-SCALE: tk scaling 적용 실패")
+            # CWE-489: 배포본에 debug 레벨 진단 호출을 남기지 않도록 warning 으로 기록한다.
+            logger.warning("DPI-SCALE: tk scaling 적용 실패")
 
     # ===================================================================
     # 적응형 폰트 시스템
@@ -297,7 +299,8 @@ class TranslatorApp:
                 self.root.after_cancel(self._resize_after_id)
             except (tk.TclError, ValueError):
                 # 이미 취소/실행된 after 콜백 — 무시 가능하나 추적을 위해 기록한다.
-                logger.debug("RESIZE: after_cancel 무시 가능한 예외")
+                # CWE-489: 배포본에 debug 레벨 진단 호출을 남기지 않도록 info 로 기록한다.
+                logger.info("RESIZE: after_cancel 무시 가능한 예외")
         self._resize_after_id = self.root.after(120, self._apply_adaptive_scale)
 
     # ===================================================================
@@ -1282,13 +1285,15 @@ class TranslatorApp:
                 # 실측 시간으로 모드별 평균 갱신 (OCR 시간은 별도 가중치이므로 제외)
                 duration = time.time() - file_start
                 est = self.file_estimates.get(fp)
-                # CWE-476: dict.get() 이 None 을 반환할 수 있으므로 명시적으로 검사한다.
-                if est is not None and est.chunks > 0 and duration > 0:
-                    api_secs = max(0.0,
-                                   duration - est.ocr_pages * self.time_estimator.OCR_PER_PAGE_S)
-                    self.time_estimator.update_avg(
-                        self.mode_var.get(), api_secs, est.chunks
-                    )
+                # CWE-476: dict.get() 이 None 을 반환할 수 있으므로, est 역참조 이전에
+                # None 검사를 별도 분기로 분리하여 NULL 역참조 가능성을 명확히 차단한다.
+                if est is not None:
+                    if est.chunks > 0 and duration > 0:
+                        api_secs = max(0.0,
+                                       duration - est.ocr_pages * self.time_estimator.OCR_PER_PAGE_S)
+                        self.time_estimator.update_avg(
+                            self.mode_var.get(), api_secs, est.chunks
+                        )
                 self._log(f"  ✓ 완료 → {Path(out).name} ({format_secs(duration)})",
                           "success")
             except TranslationCancelled:

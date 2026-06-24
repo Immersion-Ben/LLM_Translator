@@ -128,7 +128,8 @@ class SettingsDialog:
                 self.dialog.after_cancel(self._resize_after_id)
             except (tk.TclError, ValueError):
                 # 이미 취소/실행된 after 콜백 — 무시 가능하나 추적을 위해 기록한다.
-                logger.debug("CFG-RESIZE: after_cancel 무시 가능한 예외")
+                # CWE-489: 배포본에 debug 레벨 진단 호출을 남기지 않도록 info 로 기록한다.
+                logger.info("CFG-RESIZE: after_cancel 무시 가능한 예외")
         self._resize_after_id = self.dialog.after(120, self._apply_adaptive)
 
     # ------------------------------------------------------------------
