@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 APP_NAME = "LLM Translator"
-APP_VERSION = "4.0.0"
+APP_VERSION = "4.1"
 APP_TITLE = f"{APP_NAME}  |  Samsung C&T"
 
 # 한국어/영어 최상단 + 나머지 가나다 순. 두 dict 동일 순서 유지.
