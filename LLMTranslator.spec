@@ -2,7 +2,7 @@
 """PyInstaller 빌드 사양 (LLM Translator, Tesseract 오프라인 번들).
 
 build_exe.py 가 이 spec 을 호출한다.
-산출물: dist/LLMTranslator/LLM_translator.exe (onedir, windowed)
+산출물: dist/LLMTranslator/LLM_Translator.exe (onedir, windowed)
   - vendor/Tesseract-OCR/ 전체(tesseract.exe + DLL + tessdata)를 함께 번들 →
     오프라인 환경에서 인터넷 없이 이미지/PDF OCR 동작
 """
@@ -84,7 +84,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="LLM_translator",  # 산출 exe 파일명
+    name="LLM_Translator",  # 산출 exe 파일명
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

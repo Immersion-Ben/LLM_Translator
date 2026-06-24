@@ -6,7 +6,7 @@ Windows 배포용 실행 파일 빌드 스크립트 (v3).
   python build_exe.py --no-trim  # tessdata 정리 안 함 (모든 언어팩 유지)
 
 결과물:
-  dist\\LLMTranslator\\LLM_translator.exe (onedir)
+  dist\\LLMTranslator\\LLM_Translator.exe (onedir)
   LLMTranslator_v{버전}_full.zip          (배포용 풀 패키지)
 
 Tesseract OCR을 exe에 포함하려면 아래 중 하나를 준비하세요.
@@ -168,8 +168,8 @@ def main() -> int:
         return proc.returncode
 
     dist_dir = root / "dist" / "LLMTranslator"
-    # exe 파일명은 LLM_translator.exe (spec 의 EXE name 과 일치)
-    out_exe = dist_dir / "LLM_translator.exe"
+    # exe 파일명은 LLM_Translator.exe (spec 의 EXE name 과 일치)
+    out_exe = dist_dir / "LLM_Translator.exe"
     if not out_exe.is_file():
         print("\n빌드는 끝났지만 예상 경로에 exe가 없습니다. dist 폴더를 확인하세요.")
         return 1
